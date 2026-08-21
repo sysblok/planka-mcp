@@ -99,7 +99,9 @@ export const ListSchema = z.object({
   boardId: z.string(),
   name: z.string().nullable(), // Can be null for archive/trash
   position: z.number().nullable(),
-  type: ListTypeSchema.optional(),
+  // Read paths must also tolerate Planka's internal archive/trash list types
+  // and future additions. Write paths stay strict through ListTypeSchema.
+  type: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string().nullable().optional(),
 });

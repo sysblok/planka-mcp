@@ -53,4 +53,19 @@ describe("Planka 2.x schemas", () => {
       ).toBe(type);
     }
   });
+
+  it("accepts Planka internal list types on read paths", () => {
+    for (const type of ["archive", "trash"]) {
+      expect(
+        ListSchema.parse({
+          id: `list-${type}`,
+          boardId: "board-1",
+          name: null,
+          position: null,
+          type,
+          ...timestamps,
+        }).type
+      ).toBe(type);
+    }
+  });
 });
