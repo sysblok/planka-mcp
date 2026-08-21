@@ -10,9 +10,18 @@
   },
   "files": [
     "dist",
+    "docs",
+    "scripts",
+    "tests/smoke",
+    "workflow",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "LICENSE",
     "CREDITS.md",
-    "README.md"
+    "README.md",
+    "README.es.md",
+    "project.identity.json",
+    "server.json"
   ],
   "scripts": {
     "sync:identity": "node scripts/sync-identity.mjs",

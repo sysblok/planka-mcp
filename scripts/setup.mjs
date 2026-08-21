@@ -101,11 +101,11 @@ async function configureClaude(launcherPath) {
       [
         "mcp",
         "add",
-        "planka",
         "--scope",
         "user",
         "--transport",
         "stdio",
+        "planka",
         "--",
         launcherPath,
       ],
