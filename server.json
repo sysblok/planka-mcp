@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.your-github-user.planka-mcp",
+  "name": "io.github.your-github-user/planka-mcp",
   "description": "Planka 2.x MCP server with verified card, task, comment, label, and list operations.",
   "repository": {
     "url": "https://github.com/your-github-user/planka-mcp",

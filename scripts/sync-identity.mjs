@@ -14,6 +14,7 @@ const packageJson = await readJson("package.json");
 const serverJson = await readJson("server.json");
 
 packageJson.name = identity.packageName;
+packageJson.mcpName = identity.mcpServerName;
 packageJson.bin = { [identity.binName]: "dist/index.js" };
 packageJson.repository.url = `${identity.repositoryUrl}.git`;
 packageJson.bugs.url = `${identity.repositoryUrl}/issues`;
