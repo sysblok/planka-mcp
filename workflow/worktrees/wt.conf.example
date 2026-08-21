@@ -1,0 +1,24 @@
+# Copy this file to .agent-worktrees.conf in your repository root.
+
+# Defaults to the remote default branch, then main/master, then the current branch.
+WT_BASE_BRANCH=
+
+# Defaults shown here are paths/names, not environment-specific ports.
+WT_ROOT=.worktrees
+WT_BRANCH_PREFIX=agent/
+WT_MAX_WORKTREES=4
+
+# Leave empty to run without assigned ports. If set, each worktree receives the
+# first free port starting here and `up` exports PORT. Use {port} in the command
+# when your dev CLI needs an explicit argument.
+WT_PORT_START=
+
+# Leave empty to discover package.json#scripts.dev and the package manager lockfile.
+WT_DEV_COMMAND=
+
+# Optional command run once inside a newly created worktree.
+WT_INSTALL_COMMAND=
+
+# Environment copying is opt-in. Point only at a reviewed, worktree-safe template.
+WT_ENV_TEMPLATE=
+WT_ENV_TARGET=.env
