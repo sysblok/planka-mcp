@@ -1,0 +1,58 @@
+{
+  "name": "@your-npm-user/planka-mcp",
+  "version": "0.1.0",
+  "description": "A Planka 2.x MCP server with verified writes and an optional agent workflow",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "planka-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "CREDITS.md",
+    "README.md"
+  ],
+  "scripts": {
+    "sync:identity": "node scripts/sync-identity.mjs",
+    "check:identity": "node scripts/sync-identity.mjs --check",
+    "build": "npm run check:identity && tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "node tests/smoke/planka-smoke.mjs",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "planka",
+    "kanban",
+    "claude-code",
+    "ai-agent"
+  ],
+  "author": "planka-mcp contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-github-user/planka-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-github-user/planka-mcp/issues"
+  },
+  "homepage": "https://github.com/your-github-user/planka-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

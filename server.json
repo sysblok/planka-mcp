@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.your-github-user.planka-mcp",
+  "description": "Planka 2.x MCP server with verified card, task, comment, label, and list operations.",
+  "repository": {
+    "url": "https://github.com/your-github-user/planka-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@your-npm-user/planka-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "PLANKA_BASE_URL",
+          "description": "Planka base URL, for example https://planka.example.com",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_AGENT_EMAIL",
+          "description": "Email address or username for the Planka agent user",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_AGENT_PASSWORD",
+          "description": "Password for the Planka agent user",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
