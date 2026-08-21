@@ -43,7 +43,7 @@ Funciona en Linux y macOS. Bun no es un requisito.
 Cloná el repo y ejecutá el instalador guiado:
 
 ```bash
-git clone https://github.com/<TU_USUARIO_GITHUB>/planka-mcp.git
+git clone https://github.com/omnicoreos/planka-mcp.git
 cd planka-mcp
 ./scripts/setup.sh
 ```
