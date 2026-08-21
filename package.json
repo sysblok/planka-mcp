@@ -1,5 +1,5 @@
 {
-  "name": "@your-npm-user/planka-mcp",
+  "name": "@omnicoreos/planka-mcp",
   "version": "0.1.0",
   "description": "A Planka 2.x MCP server with verified writes and an optional agent workflow",
   "type": "module",
@@ -46,12 +46,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-github-user/planka-mcp.git"
+    "url": "https://github.com/omnicoreos/planka-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/your-github-user/planka-mcp/issues"
+    "url": "https://github.com/omnicoreos/planka-mcp/issues"
   },
-  "homepage": "https://github.com/your-github-user/planka-mcp#readme",
+  "homepage": "https://github.com/omnicoreos/planka-mcp#readme",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -64,5 +64,5 @@
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
   },
-  "mcpName": "io.github.your-github-user/planka-mcp"
+  "mcpName": "io.github.omnicoreos/planka-mcp"
 }

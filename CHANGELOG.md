@@ -7,8 +7,7 @@ All notable changes to this project are documented here.
 ### Identity
 
 - Working repository name: `planka-mcp`.
-- Working npm identity: `@your-npm-user/planka-mcp` until the publisher chooses a
-  real npm scope.
+- Working npm identity: `@omnicoreos/planka-mcp`.
 - `project.identity.json` is the source of truth for repository, package, binary,
   MCP Registry, and repository URL names. After changing it, run
   `npm run sync:identity`.

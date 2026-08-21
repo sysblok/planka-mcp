@@ -43,7 +43,7 @@ Linux and macOS are supported. No Bun runtime is required.
 Clone the repository and run the guided installer:
 
 ```bash
-git clone https://github.com/<YOUR_GITHUB_USER>/planka-mcp.git
+git clone https://github.com/omnicoreos/planka-mcp.git
 cd planka-mcp
 ./scripts/setup.sh
 ```

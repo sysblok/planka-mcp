@@ -1,7 +1,7 @@
 {
   "repositoryName": "planka-mcp",
-  "packageName": "@your-npm-user/planka-mcp",
+  "packageName": "@omnicoreos/planka-mcp",
   "binName": "planka-mcp",
-  "mcpServerName": "io.github.your-github-user/planka-mcp",
-  "repositoryUrl": "https://github.com/your-github-user/planka-mcp"
+  "mcpServerName": "io.github.omnicoreos/planka-mcp",
+  "repositoryUrl": "https://github.com/omnicoreos/planka-mcp"
 }
