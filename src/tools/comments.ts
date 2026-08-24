@@ -4,6 +4,8 @@
 import {
   createComment,
   getCommentsForCard,
+  updateComment,
+  deleteComment,
 } from "../operations/comments.js";
 import { PlankaError } from "../errors.js";
 
@@ -121,4 +123,115 @@ export const getCommentsTool = {
   },
 };
 
-export const commentTools = [addCommentTool, getCommentsTool];
+/**
+ * Tool: planka_manage_comment
+ * Update or delete an existing comment.
+ */
+export const manageCommentTool = {
+  name: "planka_manage_comment",
+  description:
+    "Update or delete an existing comment (get IDs from planka_get_comments). Only comments created by the agent user can be modified.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      action: {
+        type: "string",
+        enum: ["update", "delete"],
+        description: "Action to perform",
+      },
+      commentId: {
+        type: "string",
+        description: "The comment ID",
+      },
+      text: {
+        type: "string",
+        description: "New comment text (required for update)",
+      },
+    },
+    required: ["action", "commentId"],
+  },
+  handler: async (params: {
+    action: "update" | "delete";
+    commentId: string;
+    text?: string;
+  }) => {
+    try {
+      switch (params.action) {
+        case "update": {
+          if (!params.text) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: text is required for update action",
+                },
+              ],
+              isError: true,
+            };
+          }
+          const comment = await updateComment({
+            commentId: params.commentId,
+            text: params.text,
+          });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    comment: {
+                      id: comment.id,
+                      text: comment.text,
+                      updatedAt: comment.updatedAt,
+                    },
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+        case "delete": {
+          await deleteComment({ commentId: params.commentId });
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    success: true,
+                    message: `Comment ${params.commentId} deleted`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+        default:
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: Unknown action '${params.action}'`,
+              },
+            ],
+            isError: true,
+          };
+      }
+    } catch (error) {
+      if (error instanceof PlankaError) {
+        return {
+          content: [{ type: "text" as const, text: `Error: ${error.message}` }],
+          isError: true,
+        };
+      }
+      throw error;
+    }
+  },
+};
+
+export const commentTools = [addCommentTool, getCommentsTool, manageCommentTool];
