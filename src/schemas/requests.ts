@@ -203,6 +203,57 @@ export const GetCardsForListSchema = z.object({
 });
 export type GetCardsForListInput = z.input<typeof GetCardsForListSchema>;
 
+/**
+ * Output pagination: how much is handed back to the model, not how much is
+ * asked of Planka (its API pages 50 at a time with its own cursor and accepts
+ * neither limit nor offset).
+ */
+const limitField = (fallback: number) =>
+  z.number().int().min(1).max(200).optional().default(fallback);
+const offsetField = z.number().int().min(0).optional().default(0);
+
+export const ListCardsSchema = z.object({
+  listId: requiredId("listId"),
+  withLabels: z.boolean().optional().default(true),
+  withDescription: z.boolean().optional().default(false),
+  labelFilter: z.string().min(1).optional(),
+  limit: limitField(25),
+  offset: offsetField,
+});
+export type ListCardsInput = z.input<typeof ListCardsSchema>;
+
+export const BoardSummarySchema = z.object({
+  boardId: requiredId("boardId"),
+  /** List names (fragment, accent- and case-insensitive) or list ids. */
+  cardsFrom: z.array(z.string().min(1)).optional(),
+  /** Label flagged as highlighted on every card returned. */
+  highlightLabel: z.string().min(1).optional().default("decidido"),
+  limit: limitField(50),
+});
+export type BoardSummaryInput = z.input<typeof BoardSummarySchema>;
+
+export const FindCardsSchema = z
+  .object({
+    boardId: requiredId("boardId"),
+    labelName: z.string().min(1).optional(),
+    query: z.string().min(1).optional(),
+    listId: z.string().min(1).optional(),
+    withDescription: z.boolean().optional().default(false),
+    limit: limitField(25),
+    offset: offsetField,
+  })
+  .refine(
+    (input) =>
+      input.labelName !== undefined ||
+      input.query !== undefined ||
+      input.listId !== undefined,
+    {
+      message:
+        "give at least one filter: labelName, query or listId (an unfiltered search would return the whole board)",
+    }
+  );
+export type FindCardsInput = z.input<typeof FindCardsSchema>;
+
 // Attachment requests
 export const UploadAttachmentSchema = z.object({
   cardId: requiredId("cardId"),

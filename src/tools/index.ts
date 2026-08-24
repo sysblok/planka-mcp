@@ -8,12 +8,14 @@ import { labelTools } from "./labels.js";
 import { commentTools } from "./comments.js";
 import { listTools } from "./lists.js";
 import { attachmentTools } from "./attachments.js";
+import { queryTools } from "./queries.js";
 
 /**
  * All registered tools.
  */
 export const allTools = [
   ...navigationTools,
+  ...queryTools,
   ...cardTools,
   ...taskTools,
   ...labelTools,
@@ -89,3 +91,4 @@ export { labelTools } from "./labels.js";
 export { commentTools } from "./comments.js";
 export { listTools } from "./lists.js";
 export { attachmentTools } from "./attachments.js";
+export { queryTools } from "./queries.js";
