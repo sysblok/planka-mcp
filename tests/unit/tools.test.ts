@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { allTools } from "../../src/tools/index.js";
 
 describe("MCP tool registry", () => {
-  it("publishes exactly 15 uniquely named tools", () => {
+  it("publishes exactly 19 uniquely named tools", () => {
     const names = allTools.map((tool) => tool.name);
-    expect(names).toHaveLength(15);
-    expect(new Set(names).size).toBe(15);
+    expect(names).toHaveLength(19);
+    expect(new Set(names).size).toBe(19);
   });
 
   it("publishes JSON schemas with required object roots", () => {

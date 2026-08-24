@@ -7,6 +7,7 @@ import { taskTools } from "./tasks.js";
 import { labelTools } from "./labels.js";
 import { commentTools } from "./comments.js";
 import { listTools } from "./lists.js";
+import { attachmentTools } from "./attachments.js";
 
 /**
  * All registered tools.
@@ -18,6 +19,7 @@ export const allTools = [
   ...labelTools,
   ...commentTools,
   ...listTools,
+  ...attachmentTools,
 ];
 
 /**
@@ -86,3 +88,4 @@ export { taskTools } from "./tasks.js";
 export { labelTools } from "./labels.js";
 export { commentTools } from "./comments.js";
 export { listTools } from "./lists.js";
+export { attachmentTools } from "./attachments.js";

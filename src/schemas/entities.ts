@@ -190,12 +190,32 @@ export const CommentSchema = z.object({
 export type Comment = z.infer<typeof CommentSchema>;
 
 // Attachment schema
+// PLANKA 2.0 keeps the binary under `data` ({url, thumbnailUrls, size,
+// mimeType…}); a flat root-level `url` was the 1.x shape. Tolerate both.
 export const AttachmentSchema = z.object({
   id: z.string(),
   cardId: z.string(),
   creatorUserId: z.string().optional(),
   name: z.string(),
-  url: z.string().optional(),
+  type: z.string().optional(), // "file" | "link" in 2.0
+  data: z
+    .object({
+      url: z.string().optional(),
+      size: z.number().optional(),
+      mimeType: z.string().nullable().optional(),
+      image: z
+        .object({
+          width: z.number().optional(),
+          height: z.number().optional(),
+        })
+        .passthrough()
+        .nullable()
+        .optional(),
+    })
+    .passthrough()
+    .nullable()
+    .optional(),
+  url: z.string().optional(), // 1.x compatibility
   createdAt: z.string(),
   updatedAt: z.string().nullable().optional(),
 });

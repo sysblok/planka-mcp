@@ -202,6 +202,14 @@ export const GetCardsForListSchema = z.object({
 });
 export type GetCardsForListInput = z.input<typeof GetCardsForListSchema>;
 
+// Attachment requests
+export const UploadAttachmentSchema = z.object({
+  cardId: requiredId("cardId"),
+  filePath: z.string().min(1, "filePath is required"),
+  name: z.string().min(1).optional(),
+});
+export type UploadAttachmentInput = z.input<typeof UploadAttachmentSchema>;
+
 // Project requests
 export const GetStructureSchema = z.object({
   projectId: z.string().min(1).optional(),
