@@ -1,6 +1,6 @@
 {
   "name": "@omnicoreos/planka-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Planka 2.x MCP server with verified writes and an optional agent workflow",
   "type": "module",
   "main": "dist/index.js",
@@ -29,7 +29,7 @@
     "build": "npm run check:identity && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:smoke": "node tests/smoke/planka-smoke.mjs",
+    "test:smoke": "npm run build && node tests/smoke/planka-smoke.mjs",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
   },

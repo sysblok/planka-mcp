@@ -22,7 +22,7 @@ export const getStructureTool = {
     },
   },
   handler: async (params: { projectId?: string }) => {
-    const structure = await getStructure(params.projectId);
+    const structure = await getStructure({ projectId: params.projectId });
 
     // Format for readability
     const formatted = structure.map((project) => ({
@@ -77,7 +77,7 @@ export const getBoardTool = {
     required: ["boardId"],
   },
   handler: async (params: { boardId: string; includeTaskCounts?: boolean }) => {
-    const details = await getBoardWithTaskCounts(params.boardId);
+    const details = await getBoardWithTaskCounts({ boardId: params.boardId });
 
     // Group cards by list for readability
     const cardsByList = new Map<string, typeof details.cards>();

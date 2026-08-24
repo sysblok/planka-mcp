@@ -11,9 +11,30 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { getToolDefinitions, getTool } from "./tools/index.js";
-import { PlankaError, PlankaConfigError } from "./errors.js";
+import {
+  getToolDefinitions,
+  getTool,
+  allTools,
+  findMissingRequiredArgs,
+} from "./tools/index.js";
+import {
+  PlankaError,
+  PlankaConfigError,
+  PlankaInputError,
+  formatInputError,
+  formatMissingArgsError,
+  formatResponseShapeError,
+  isZodError,
+} from "./errors.js";
 import { SERVER_NAME, SERVER_VERSION } from "./identity.generated.js";
+
+/** Standard error response back to the model. */
+function errorResult(text: string) {
+  return {
+    content: [{ type: "text" as const, text }],
+    isError: true,
+  };
+}
 
 /**
  * Main entry point.
@@ -45,58 +66,54 @@ async function main() {
 
     const tool = getTool(name);
     if (!tool) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unknown tool: ${name}`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(
+        `Unknown tool: ${name}. Available tools: ${allTools
+          .map((t) => t.name)
+          .join(", ")}`
+      );
+    }
+
+    // Presence check before entering the handler: a missing required field has
+    // to name the tool and the field, not die somewhere inside.
+    const missing = findMissingRequiredArgs(tool, args);
+    if (missing.length > 0) {
+      return errorResult(
+        formatMissingArgsError(name, missing, args, tool.inputSchema)
+      );
     }
 
     try {
       const result = await tool.handler(args || {});
       return result;
     } catch (error) {
+      // INPUT validation: name the tool, the field and what arrived.
+      if (error instanceof PlankaInputError) {
+        return errorResult(formatInputError(name, error, tool.inputSchema));
+      }
+
+      // A loose ZodError means Planka's RESPONSE did not match the schema.
+      // Name it separately so the model does not assume it got the args wrong.
+      if (isZodError(error)) {
+        return errorResult(formatResponseShapeError(name, error));
+      }
+
       // Handle configuration errors specifically
       if (error instanceof PlankaConfigError) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Configuration error: ${error.message}\n\nRequired environment variables:\n- PLANKA_BASE_URL\n- PLANKA_AGENT_EMAIL\n- PLANKA_AGENT_PASSWORD`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(
+          `Configuration error: ${error.message}\n\nRequired environment variables:\n- PLANKA_BASE_URL\n- PLANKA_AGENT_EMAIL\n- PLANKA_AGENT_PASSWORD`
+        );
       }
 
       // Handle other PLANKA errors
       if (error instanceof PlankaError) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `PLANKA error: ${error.message}`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(`PLANKA error: ${error.message}`);
       }
 
       // Log unexpected errors and return generic message
       console.error(`Error in tool ${name}:`, error);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unexpected error: ${error instanceof Error ? error.message : "Unknown error"}`,
-          },
-        ],
-        isError: true,
-      };
+      return errorResult(
+        `Unexpected error while running ${name}: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   });
 

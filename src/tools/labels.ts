@@ -8,6 +8,7 @@ import {
   setCardLabels,
 } from "../operations/labels.js";
 import { LabelColorSchema } from "../schemas/entities.js";
+import { UpdateLabelParamsInput } from "../schemas/requests.js";
 import { PlankaError } from "../errors.js";
 
 // Valid colors for the schema description
@@ -145,7 +146,7 @@ export const manageLabelsTool = {
             };
           }
 
-          const updates: Record<string, unknown> = {};
+          const updates: UpdateLabelParamsInput = { labelId: params.labelId };
           if (params.name !== undefined) updates.name = params.name;
           if (params.color !== undefined) {
             const colorParse = LabelColorSchema.safeParse(params.color);
@@ -163,7 +164,7 @@ export const manageLabelsTool = {
             updates.color = colorParse.data;
           }
 
-          const label = await updateLabel(params.labelId, updates);
+          const label = await updateLabel(updates);
 
           return {
             content: [
@@ -199,7 +200,7 @@ export const manageLabelsTool = {
             };
           }
 
-          await deleteLabel(params.labelId);
+          await deleteLabel({ labelId: params.labelId });
 
           return {
             content: [
@@ -305,7 +306,11 @@ export const setCardLabelsTool = {
         };
       }
 
-      const result = await setCardLabels(params.cardId, toAdd, toRemove);
+      const result = await setCardLabels({
+        cardId: params.cardId,
+        addLabelIds: toAdd,
+        removeLabelIds: toRemove,
+      });
       const ok = result.failed.length === 0;
 
       return {

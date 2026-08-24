@@ -1,6 +1,6 @@
 # planka-mcp
 
-Control a Planka 2.x board from Claude Code through 15 MCP tools.
+Control a Planka 2.x board from Claude Code through 24 MCP tools.
 Writes are re-read and verified, so a reported success matches the board.
 An optional workflow turns that board into durable memory for agent work.
 
@@ -17,7 +17,7 @@ You talk to Claude Code
 
 > [!WARNING]
 > The old `@gogogadgetbytes/planka-mcp` package can report success while doing
-> nothing on Planka 2.x. Read [the four silent-failure gotchas](docs/planka-2x-gotchas.md)
+> nothing on Planka 2.x. Read [the five silent-failure gotchas](docs/planka-2x-gotchas.md)
 > before replacing an existing installation.
 
 ## New to MCP? Read this first
@@ -100,7 +100,7 @@ Show me my Planka projects and boards. In the Pending list, create a card named
 If Claude cannot see the tools, restart first and then follow
 [Troubleshooting](docs/troubleshooting.md).
 
-## The 15 tools
+## The 24 tools
 
 IDs are strings. Start with `planka_get_structure`, then use IDs returned by
 Planka; do not guess them.
@@ -109,6 +109,10 @@ Planka; do not guess them.
 |---|---|
 | `planka_get_structure` | Lists visible projects, boards, and lists |
 | `planka_get_board` | Reads one board with its lists, cards, labels, and optional task counts |
+| `planka_list_lists` | Lists a board's columns with card counts, and no cards |
+| `planka_board_summary` | One-call briefing: columns, labels, and the cards waiting on a decision |
+| `planka_list_cards` | Reads one column, paginated, without descriptions by default |
+| `planka_find_cards` | Searches a board's cards by label, text, or column |
 | `planka_create_card` | Creates a card and can attach tasks and labels |
 | `planka_get_card` | Reads complete card details |
 | `planka_update_card` | Updates title, description, due date, or completion |
@@ -121,7 +125,20 @@ Planka; do not guess them.
 | `planka_set_card_labels` | Adds or removes labels and verifies the final state |
 | `planka_add_comment` | Adds a comment through Planka 2.x's dedicated endpoint |
 | `planka_get_comments` | Reads comments through the dedicated endpoint |
+| `planka_manage_comment` | Edits or deletes an existing comment |
 | `planka_manage_lists` | Creates, updates, or deletes board lists |
+| `planka_add_attachment` | Uploads a local file to a card and verifies it landed |
+| `planka_get_attachments` | Lists a card's attachments with type, size, and download URL |
+| `planka_view_attachment` | Returns an attachment's content; images come back viewable |
+| `planka_delete_attachment` | Deletes an attachment |
+
+`planka_get_board` returns the entire board, which is often more than the
+question needs. The four scoped reads answer narrower questions and return far
+less text: measured on a board of 100 cards, `planka_list_lists` returned 39
+times less than `planka_get_board`, `planka_board_summary` 16 times less, and
+`planka_find_cards` between 18 and 56 times less depending on the filter. They
+also report `total`, `returned`, and `hasMore`, so a clipped answer never looks
+complete.
 
 Every input field and a complete payload for every tool are in
 [Tools reference](docs/tools.md).
@@ -170,7 +187,8 @@ npm test
 ```
 
 The real smoke test is opt-in because it mutates a writable board and then cleans
-up after itself:
+up after itself. It drives all 24 tools over stdio and cross-checks every write
+against the raw Planka API — 64 named checks:
 
 ```bash
 export PLANKA_BASE_URL="https://planka.example.com"
@@ -179,6 +197,16 @@ export PLANKA_AGENT_PASSWORD="<YOUR_PASSWORD>"
 export PLANKA_SMOKE_BOARD_ID="1234567890123456789"
 npm run test:smoke
 ```
+
+`npm run test:smoke` builds first, so it cannot test a stale `dist/`. Four
+optional variables tune it:
+
+| Variable | What it does |
+|---|---|
+| `PLANKA_SMOKE_LIST_ID` | Column where the scratch card is created. Without it, a scratch-looking column is picked, falling back to the first one |
+| `PLANKA_SMOKE_FAIL_AFTER` | Injects a failure after check `<n>`, to prove that cleanup still runs |
+| `PLANKA_MCP_ENTRY` | Server entry point. Defaults to `dist/index.js` |
+| `VERBOSE` | Set to `1` to print each check's payload |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a change. Release identity
 is centralized in [project.identity.json](project.identity.json); update it and

@@ -2,12 +2,17 @@
  * Comment operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import { Comment } from "../schemas/entities.js";
 import {
+  CardIdSchema,
+  CardIdInput,
+  CommentIdSchema,
+  CommentIdInput,
   CreateCommentSchema,
-  UpdateCommentSchema,
   CreateCommentInput,
-  UpdateCommentInput,
+  UpdateCommentParamsSchema,
+  UpdateCommentParamsInput,
 } from "../schemas/requests.js";
 import { CommentResponse, CommentsResponse, CommentsIncludedSchema } from "../schemas/responses.js";
 
@@ -23,7 +28,7 @@ export interface CommentWithAuthor extends Comment {
  * Add a comment to a card.
  */
 export async function createComment(input: CreateCommentInput): Promise<Comment> {
-  const validated = CreateCommentSchema.parse(input);
+  const validated = parseInput(CreateCommentSchema, input);
 
   const response = await plankaClient.post<unknown>(
     `/api/cards/${validated.cardId}/comments`,
@@ -40,14 +45,13 @@ export async function createComment(input: CreateCommentInput): Promise<Comment>
  * Update a comment's text.
  */
 export async function updateComment(
-  commentId: string,
-  input: UpdateCommentInput
+  input: UpdateCommentParamsInput
 ): Promise<Comment> {
-  const validated = UpdateCommentSchema.parse(input);
+  const { commentId, ...updates } = parseInput(UpdateCommentParamsSchema, input);
 
   const response = await plankaClient.patch<unknown>(
     `/api/comments/${commentId}`,
-    validated
+    updates
   );
 
   const parsed = CommentResponse.parse(response);
@@ -57,7 +61,8 @@ export async function updateComment(
 /**
  * Delete a comment.
  */
-export async function deleteComment(commentId: string): Promise<void> {
+export async function deleteComment(input: CommentIdInput): Promise<void> {
+  const { commentId } = parseInput(CommentIdSchema, input);
   await plankaClient.delete(`/api/comments/${commentId}`);
 }
 
@@ -67,8 +72,9 @@ export async function deleteComment(commentId: string): Promise<void> {
  * response's `included` never carries them.
  */
 export async function getCommentsForCard(
-  cardId: string
+  input: CardIdInput
 ): Promise<CommentWithAuthor[]> {
+  const { cardId } = parseInput(CardIdSchema, input);
   const response = await plankaClient.get<unknown>(
     `/api/cards/${cardId}/comments`
   );

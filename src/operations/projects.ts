@@ -2,8 +2,10 @@
  * Project operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import { Project, Board, List } from "../schemas/entities.js";
 import { ProjectsResponse, ProjectsIncludedSchema } from "../schemas/responses.js";
+import { GetStructureSchema, GetStructureInput } from "../schemas/requests.js";
 import { z } from "zod";
 
 /**
@@ -39,7 +41,11 @@ export async function getProjects(): Promise<{
 /**
  * Get the full structure: projects -> boards -> lists.
  */
-export async function getStructure(projectId?: string): Promise<ProjectStructure[]> {
+export async function getStructure(
+  input: GetStructureInput = {}
+): Promise<ProjectStructure[]> {
+  const { projectId } = parseInput(GetStructureSchema, input);
+
   const { projects, boards } = await getProjects();
 
   // Filter to specific project if requested

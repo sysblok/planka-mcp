@@ -1,6 +1,6 @@
 # planka-mcp
 
-Manejá un tablero Planka 2.x desde Claude Code mediante 15 tools MCP.
+Manejá un tablero Planka 2.x desde Claude Code mediante 24 tools MCP.
 Las escrituras se releen y verifican: un éxito informado coincide con el board.
 Un flujo opcional convierte ese board en memoria durable para el trabajo con agentes.
 
@@ -17,7 +17,7 @@ Vos hablás con Claude Code
 
 > [!WARNING]
 > El paquete viejo `@gogogadgetbytes/planka-mcp` puede informar éxito sin haber
-> hecho nada en Planka 2.x. Leé [los cuatro fallos silenciosos](docs/planka-2x-gotchas.md)
+> hecho nada en Planka 2.x. Leé [los cinco fallos silenciosos](docs/planka-2x-gotchas.md)
 > antes de reemplazar una instalación existente.
 
 ## ¿Es tu primer MCP? Leé esto primero
@@ -100,7 +100,7 @@ Mostrame mis proyectos y boards de Planka. En la lista Pending, creá una card l
 Si Claude no ve las tools, reinicialo primero y después seguí
 [Solución de problemas](docs/troubleshooting.md).
 
-## Las 15 tools
+## Las 24 tools
 
 Los IDs son strings. Empezá con `planka_get_structure` y usá los IDs que devuelve
 Planka; no los adivines.
@@ -109,6 +109,10 @@ Planka; no los adivines.
 |---|---|
 | `planka_get_structure` | Lista proyectos, boards y listas visibles |
 | `planka_get_board` | Lee un board con listas, cards, labels y conteos opcionales de tareas |
+| `planka_list_lists` | Lista las columnas de un board con sus conteos de cards, sin las cards |
+| `planka_board_summary` | Resumen en una llamada: columnas, labels y las cards que esperan una decisión |
+| `planka_list_cards` | Lee una sola columna, paginada y sin descripciones por defecto |
+| `planka_find_cards` | Busca cards de un board por label, texto o columna |
 | `planka_create_card` | Crea una card y puede agregar tareas y labels |
 | `planka_get_card` | Lee el detalle completo de una card |
 | `planka_update_card` | Actualiza título, descripción, vencimiento o estado de completado |
@@ -121,7 +125,20 @@ Planka; no los adivines.
 | `planka_set_card_labels` | Agrega o quita labels y verifica el estado final |
 | `planka_add_comment` | Agrega un comentario por el endpoint dedicado de Planka 2.x |
 | `planka_get_comments` | Lee comentarios por el endpoint dedicado |
+| `planka_manage_comment` | Edita o borra un comentario existente |
 | `planka_manage_lists` | Crea, actualiza o borra listas del board |
+| `planka_add_attachment` | Sube un archivo local a una card y verifica que quedó |
+| `planka_get_attachments` | Lista los adjuntos de una card con tipo, tamaño y URL de descarga |
+| `planka_view_attachment` | Devuelve el contenido de un adjunto; las imágenes vuelven visibles |
+| `planka_delete_attachment` | Borra un adjunto |
+
+`planka_get_board` devuelve el board entero, que suele ser más de lo que la
+pregunta necesita. Las cuatro lecturas acotadas responden preguntas más chicas y
+devuelven mucho menos texto: medido sobre un board de 100 cards,
+`planka_list_lists` devolvió 39 veces menos que `planka_get_board`,
+`planka_board_summary` 16 veces menos, y `planka_find_cards` entre 18 y 56 veces
+menos según el filtro. Además informan `total`, `returned` y `hasMore`, así que
+una respuesta recortada nunca parece completa.
 
 Todos los campos y un payload completo por tool están en la
 [referencia de tools](docs/tools.md).
@@ -169,7 +186,9 @@ npm run build
 npm test
 ```
 
-El smoke real es opt-in porque modifica un board escribible y después limpia lo creado:
+El smoke real es opt-in porque modifica un board escribible y después limpia lo
+creado. Ejercita las 24 tools por stdio y contrasta cada escritura contra la API
+cruda de Planka: 64 checks con nombre.
 
 ```bash
 export PLANKA_BASE_URL="https://planka.example.com"
@@ -178,6 +197,16 @@ export PLANKA_AGENT_PASSWORD="<TU_PASSWORD>"
 export PLANKA_SMOKE_BOARD_ID="1234567890123456789"
 npm run test:smoke
 ```
+
+`npm run test:smoke` compila primero, así que no puede testear un `dist/` viejo.
+Cuatro variables opcionales lo ajustan:
+
+| Variable | Qué hace |
+|---|---|
+| `PLANKA_SMOKE_LIST_ID` | Columna donde se crea la card descartable. Sin esto elige una columna que parezca de descarte y, si no la hay, la primera |
+| `PLANKA_SMOKE_FAIL_AFTER` | Inyecta un fallo después del check `<n>`, para probar que la limpieza igual corre |
+| `PLANKA_MCP_ENTRY` | Punto de entrada del servidor. Por defecto `dist/index.js` |
+| `VERBOSE` | Poné `1` para imprimir el payload de cada check |
 
 Leé [CONTRIBUTING.md](CONTRIBUTING.md) antes de abrir un cambio. La identidad de
 release está centralizada en [project.identity.json](project.identity.json):

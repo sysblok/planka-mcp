@@ -2,6 +2,56 @@
 
 All notable changes to this project are documented here.
 
+## [0.2.0] - 2026-08-24
+
+### Added
+
+- Nine tools, bringing the server to twenty-four.
+- Attachments: `planka_add_attachment` uploads a local file and re-reads the card
+  to confirm it landed, `planka_get_attachments` lists what a card holds,
+  `planka_view_attachment` returns content — images as MCP image content up to
+  3 MB, text inline up to 50 KB, anything else as metadata and a URL — and
+  `planka_delete_attachment` removes one.
+- `planka_manage_comment`, to edit or delete an existing comment.
+- Scoped reads that answer a narrower question than `planka_get_board` and return
+  proportionally less text: `planka_list_lists` (columns and card counts),
+  `planka_board_summary` (columns, labels, and the cards awaiting a decision),
+  `planka_list_cards` (one column, paginated), and `planka_find_cards` (search by
+  label, text, or column). Measured on a board of 100 cards, they return between
+  16 and 56 times less than `planka_get_board`.
+- Honest clipping on every scoped read: `total`, `returned`, `hasMore`, and
+  `nextOffset`, so a partial answer is never mistaken for a complete one.
+- Actionable input errors. A rejected call now names the tool, the field, the
+  declared type and description, what was expected, and what actually arrived.
+  Missing required fields are caught before the handler runs, and a Planka
+  response that does not match the expected shape is labelled as an API mismatch
+  rather than an argument problem.
+- Diagnosis for a project ID passed where a board ID belongs. Both are strings of
+  digits, and Planka answers the mistake with a bare 404. The server now resolves
+  it automatically when the project has exactly one board, and otherwise explains
+  what the ID is and lists the boards it could have meant.
+- Documentation for the smoke test's optional environment variables:
+  `PLANKA_SMOKE_LIST_ID` and `PLANKA_SMOKE_FAIL_AFTER`, which injects a failure to
+  prove the cleanup path still runs.
+
+### Changed
+
+- The smoke test grew from a first-failure abort over seven tools to 64 named
+  checks covering all twenty-four end to end, each write cross-checked against the
+  raw Planka HTTP API. Cleanup runs in a `finally` and on `SIGINT`/`SIGTERM`, over
+  raw HTTP so the safety net does not depend on the component under test.
+- `npm run test:smoke` builds first, so it can no longer test a stale `dist/`.
+- Internal operation signatures take a single input object everywhere, validated
+  through one shared path. No tool payload changed.
+
+### Fixed
+
+- Long columns truncated in silence. `GET /api/lists/:id/cards` pages at 50 and
+  ignores `?limit=`; its cursor is composite (`before[id]` plus
+  `before[listChangedAt]`). A column of 77 cards returned 50 with no indication
+  that 27 were missing. The cursor is now followed, and a read that still could
+  not be completed reports `truncated: true` instead of looking complete.
+
 ## [0.1.0] - 2026-08-21
 
 ### Identity

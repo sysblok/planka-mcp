@@ -3,7 +3,7 @@
 The older published package can fail without throwing. That is worse than a loud
 error because an agent may make a workflow decision from false state.
 
-This fork fixes four known incompatibilities and verifies the dangerous writes.
+This fork fixes five known incompatibilities and verifies the dangerous writes.
 
 ## 1. Comments appear empty
 
@@ -70,7 +70,81 @@ validated against the currently documented Planka 2.x colors.
 
 Upstream fix proposed in [PR #1](https://github.com/gogogadgetbytes/planka-mcp/pull/1).
 
+## 5. A long column truncates in silence
+
+**Planka 2.x behavior:** `GET /api/lists/:listId/cards` returns at most 50 cards
+per page and **ignores `?limit=`**. There is no `total` in the response and no
+flag saying more exist.
+
+A column holding 77 cards answers with 50 of them, HTTP 200, and nothing else.
+Read as-is, that is a board with 27 cards fewer than it has, and an agent will
+happily conclude a card does not exist.
+
+The cursor is **composite**. Both parts are required, and they come from the last
+card of the previous page:
+
+```text
+GET /api/lists/<LIST_ID>/cards?before[id]=<LAST_CARD_ID>&before[listChangedAt]=<LAST_CARD_listChangedAt>
+```
+
+This fork follows that cursor until a page comes back short, capped at 20 pages.
+When it stops early, or when the last card has no `listChangedAt` and no cursor
+can be built, `planka_list_cards` returns `truncated: true` with a note. It says
+it did not see everything rather than pretending it did.
+
+Why it matters: an incomplete list looks exactly like a complete one.
+
 ## Related Planka 2.x traps
+
+### Board-level card and label endpoints do not exist
+
+These two routes look like they should exist, and they do not:
+
+```text
+GET /api/boards/:boardId/cards
+GET /api/boards/:boardId/labels
+```
+
+Planka does not 404 them. The web server answers with the single-page app's HTML
+and **status 200**, so a client that only checks `response.ok` sees a success and
+then fails while parsing, or worse, treats the result as an empty collection.
+
+Cards and labels are reachable per list (`GET /api/lists/:listId/cards`) or in
+the board payload itself (`GET /api/boards/:boardId`, whose `included` carries
+every card, label, and card-label link).
+
+### Per-list `search` and `labelIds` really do filter server-side
+
+Verified against Planka 2.x on 2026-08-24, `GET /api/lists/:listId/cards`
+accepts:
+
+- `?search=<text>` — matches the card **name and description**, case-insensitive;
+- `?labelIds=<labelId>` — restricts to cards carrying that label.
+
+Both are per list, not per board. Since enumerating a board's columns, or
+resolving a label name to its ID, needs a `GET /api/boards/:boardId` anyway, and
+that single call already carries every card with its description and label
+links, this fork filters board-level searches locally over that one request.
+Issuing one search per list would be N extra round-trips for data already in
+hand. What stays small in `planka_find_cards` and `planka_board_summary` is the
+**output**, which is what a model pays for.
+
+### A projectId where a boardId goes returns a bare 404
+
+Project IDs and board IDs are both strings of digits. Nothing in either one says
+which it is. Passing a project ID to a board tool produces
+`GET /api/boards/<projectId>` and a naked `404`, which does not hint that the ID
+belongs to a different kind of entity.
+
+This fork diagnoses that 404 before reporting it:
+
+- if the ID is a project with exactly one board, it resolves to that board and
+  the call proceeds;
+- if it is a project with several boards, the error says so and lists them with
+  their IDs and names;
+- if it is a project with no boards, the error says that instead;
+- if it is neither a project nor a board, the error says so and lists the boards
+  the account can actually see.
 
 ### Creating lists requires `type`
 
@@ -103,14 +177,16 @@ case explicitly before writing configuration.
 A valid JSON-RPC result proves only that the MCP handler returned. It does not prove
 Planka persisted the change.
 
-`npm run test:smoke` starts the built MCP server and then:
+`npm run test:smoke` builds the server, starts it over stdio, and drives all 24
+tools through real MCP calls — 64 named checks. Every write is then cross-checked
+against the raw Planka HTTP API: a tool that reports success on something that
+never landed fails here. It creates a uniquely prefixed card, list, labels, tasks,
+comments, and an attachment, exercises the scoped reads against the sizes the raw
+board actually returns, feeds a project ID to a board tool to confirm the 404 gets
+explained, and deletes everything it made in a `finally` — over raw HTTP, so
+cleanup does not depend on the component under test.
 
-1. reads the selected board through MCP;
-2. creates a temporary card through MCP;
-3. adds and removes a label through MCP;
-4. checks both states against the raw board API;
-5. writes and re-reads a comment through MCP and raw API;
-6. deletes the card through MCP and confirms raw absence;
-7. removes any temporary label created by the test.
+`PLANKA_SMOKE_FAIL_AFTER=<n>` injects a failure after check `n`, which is how the
+cleanup path itself is verified.
 
 This is the regression defense for silent failures.

@@ -18,6 +18,17 @@ export interface ClientConfig {
 export interface RequestOptions {
   token?: string;
   body?: unknown;
+  /**
+   * Multipart body (attachment uploads). Content-Type is left unset on
+   * purpose: fetch generates it together with the boundary.
+   */
+  form?: FormData;
+  /**
+   * Also send the token as an `accessToken` cookie. Planka 2.0 serves
+   * attachment downloads with either, and different deployments disagree on
+   * which one they honour.
+   */
+  cookieToken?: boolean;
   signal?: AbortSignal;
 }
 
@@ -27,12 +38,19 @@ export function createRequestInit(
 ): RequestInit {
   const headers: Record<string, string> = {};
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  if (options.token && options.cookieToken) {
+    headers.Cookie = `accessToken=${options.token}`;
+  }
+  if (options.form === undefined && options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
 
   return {
     method,
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body:
+      options.form ??
+      (options.body !== undefined ? JSON.stringify(options.body) : undefined),
     signal: options.signal,
   };
 }
@@ -243,6 +261,91 @@ export class PlankaClient {
     }
 
     return data as T;
+  }
+
+  /**
+   * POST multipart/form-data (attachment uploads).
+   * @param isRetry - Internal flag to prevent infinite retry loops on 401
+   */
+  async postMultipart<T>(
+    path: string,
+    form: FormData,
+    isRetry = false
+  ): Promise<T> {
+    const config = this.getConfig();
+    const token = await this.getToken();
+    const url = `${config.baseUrl}${path}`;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        url,
+        createRequestInit("POST", {
+          token,
+          form,
+          signal: this.createTimeoutSignal(),
+        })
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new PlankaNetworkError(`Request timeout: POST ${path}`, error);
+      }
+      throw new PlankaNetworkError(`Network error: POST ${path}`, error);
+    }
+
+    const data = await this.safeParseJson(response);
+
+    if (!response.ok) {
+      if (response.status === 401 && this.token && !isRetry) {
+        this.token = null;
+        this.tokenExpiresAt = 0;
+        return this.postMultipart(path, form, true);
+      }
+      throw createPlankaError(response.status, data, `POST ${path}`);
+    }
+
+    return data as T;
+  }
+
+  /**
+   * Authenticated binary download (attachment contents).
+   * Accepts an absolute URL on the same host, or a relative path.
+   */
+  async getBinary(
+    urlOrPath: string
+  ): Promise<{ bytes: Uint8Array; mimeType: string | null }> {
+    const config = this.getConfig();
+    const token = await this.getToken();
+    const url = urlOrPath.startsWith("http")
+      ? urlOrPath
+      : `${config.baseUrl}${urlOrPath}`;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        url,
+        createRequestInit("GET", {
+          token,
+          cookieToken: true,
+          signal: this.createTimeoutSignal(),
+        })
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new PlankaNetworkError(`Request timeout: GET ${url}`, error);
+      }
+      throw new PlankaNetworkError(`Network error: GET ${url}`, error);
+    }
+
+    if (!response.ok) {
+      throw createPlankaError(response.status, null, `GET ${url}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    return {
+      bytes: new Uint8Array(buffer),
+      mimeType: response.headers.get("content-type"),
+    };
   }
 
   /**

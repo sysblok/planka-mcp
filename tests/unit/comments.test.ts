@@ -35,9 +35,22 @@ describe("getCommentsForCard", () => {
       },
     });
 
-    await expect(getCommentsForCard("card-1")).resolves.toMatchObject([
+    await expect(getCommentsForCard({ cardId: "card-1" })).resolves.toMatchObject([
       { id: "comment-1", authorName: "Agent User" },
     ]);
     expect(mocks.get).toHaveBeenCalledWith("/api/cards/card-1/comments");
+  });
+});
+
+describe("planka_manage_comment", () => {
+  it("requires text before sending an update to Planka", async () => {
+    const { manageCommentTool } = await import("../../src/tools/comments.js");
+    const result = await manageCommentTool.handler({
+      action: "update",
+      commentId: "comment-1",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/text is required/i);
   });
 });

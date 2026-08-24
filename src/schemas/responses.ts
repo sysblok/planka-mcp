@@ -56,6 +56,8 @@ export const CommentsResponse = MultiItemResponse(CommentSchema);
 
 export const CardLabelResponse = SingleItemResponse(CardLabelSchema);
 
+export const AttachmentResponse = SingleItemResponse(AttachmentSchema);
+
 // Auth response
 export const AuthResponse = z.object({
   item: z.string(), // JWT token

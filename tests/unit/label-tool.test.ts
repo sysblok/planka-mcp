@@ -30,11 +30,11 @@ describe("planka_set_card_labels", () => {
       addLabelIds: ["label-1"],
     });
 
-    expect(mocks.setCardLabels).toHaveBeenCalledWith(
-      "card-1",
-      ["label-1", "label-2"],
-      []
-    );
+    expect(mocks.setCardLabels).toHaveBeenCalledWith({
+      cardId: "card-1",
+      addLabelIds: ["label-1", "label-2"],
+      removeLabelIds: [],
+    });
     expect(result.isError).toBeUndefined();
   });
 

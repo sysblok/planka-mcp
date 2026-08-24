@@ -26,7 +26,7 @@ describe("Planka 2.x card-label requests", () => {
 
   it("deletes labels with Planka criteria syntax", async () => {
     mocks.delete.mockResolvedValue(undefined);
-    await removeLabelFromCard("card-1", "label-1");
+    await removeLabelFromCard({ cardId: "card-1", labelId: "label-1" });
     expect(mocks.delete).toHaveBeenCalledWith(
       "/api/cards/card-1/card-labels/labelId:label-1"
     );

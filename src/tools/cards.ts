@@ -8,6 +8,7 @@ import {
   moveCard,
   deleteCard,
 } from "../operations/cards.js";
+import { UpdateCardParamsInput } from "../schemas/requests.js";
 import { createTasks } from "../operations/tasks.js";
 import { addLabelToCard } from "../operations/labels.js";
 import { PlankaError } from "../errors.js";
@@ -146,7 +147,7 @@ export const getCardTool = {
   },
   handler: async (params: { cardId: string }) => {
     try {
-      const details = await getCard(params.cardId);
+      const details = await getCard({ cardId: params.cardId });
 
       const formatted = {
         card: {
@@ -249,16 +250,15 @@ export const updateCardTool = {
       const { cardId, ...updates } = params;
 
       // Only include defined fields
-      const filteredUpdates: Record<string, unknown> = {};
-      if (updates.name !== undefined) filteredUpdates.name = updates.name;
+      const patch: UpdateCardParamsInput = { cardId };
+      if (updates.name !== undefined) patch.name = updates.name;
       if (updates.description !== undefined)
-        filteredUpdates.description = updates.description;
-      if (updates.dueDate !== undefined)
-        filteredUpdates.dueDate = updates.dueDate;
+        patch.description = updates.description;
+      if (updates.dueDate !== undefined) patch.dueDate = updates.dueDate;
       if (updates.isCompleted !== undefined)
-        filteredUpdates.isCompleted = updates.isCompleted;
+        patch.isCompleted = updates.isCompleted;
 
-      const card = await updateCard(cardId, filteredUpdates);
+      const card = await updateCard(patch);
 
       return {
         content: [
@@ -382,7 +382,7 @@ export const deleteCardTool = {
   },
   handler: async (params: { cardId: string }) => {
     try {
-      await deleteCard(params.cardId);
+      await deleteCard({ cardId: params.cardId });
 
       return {
         content: [
