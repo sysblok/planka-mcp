@@ -193,6 +193,43 @@ export class PlankaApi {
   getComments(cardId) {
     return this.get(`/api/cards/${cardId}/comments`);
   }
+
+  getCard(cardId) {
+    return this.get(`/api/cards/${cardId}`);
+  }
+
+  deleteList(listId) {
+    return this.delete(`/api/lists/${listId}`);
+  }
+
+  deleteAttachment(attachmentId) {
+    return this.delete(`/api/attachments/${attachmentId}`);
+  }
+
+  /**
+   * Authenticated binary download. Planka 2.0 serves attachment contents with
+   * the token as a Bearer header or as an `accessToken` cookie depending on
+   * the deployment, so send both. Accepts an absolute URL or a relative path.
+   */
+  async getBinary(urlOrPath) {
+    const url = urlOrPath.startsWith("http")
+      ? urlOrPath
+      : `${this.baseUrl}${urlOrPath}`;
+    const response = await this.fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        Cookie: `accessToken=${this.token}`,
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!response.ok) {
+      throw new PlankaApiError(`GET ${url} failed: HTTP ${response.status}`, {
+        status: response.status,
+      });
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
 }
 
 export function boardEntities(payload) {
