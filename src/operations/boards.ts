@@ -3,6 +3,7 @@
  */
 import { plankaClient } from "../client.js";
 import { parseInput } from "../errors.js";
+import { withBoardId } from "./board-id.js";
 import {
   Board,
   List,
@@ -57,23 +58,27 @@ export interface CardWithTaskCounts extends Card {
 export async function getBoard(input: BoardIdInput): Promise<BoardDetails> {
   const { boardId } = parseInput(BoardIdSchema, input);
 
-  const response = await plankaClient.get<unknown>(`/api/boards/${boardId}`);
-  const parsed = BoardResponse.parse(response);
-  const included = BoardIncludedSchema.parse(
-    (response as Record<string, unknown>).included || {}
-  );
+  return withBoardId(boardId, async (id) => {
+    const response = await plankaClient.get<unknown>(`/api/boards/${id}`);
+    const parsed = BoardResponse.parse(response);
+    const included = BoardIncludedSchema.parse(
+      (response as Record<string, unknown>).included || {}
+    );
 
-  return {
-    board: parsed.item,
-    lists: (included.lists || []).sort(
-      (a, b) => (a.position ?? Infinity) - (b.position ?? Infinity)
-    ),
-    cards: included.cards || [],
-    labels: (included.labels || []).sort((a, b) => a.position - b.position),
-    cardLabels: included.cardLabels || [],
-    taskLists: (included.taskLists || []).sort((a, b) => a.position - b.position),
-    tasks: included.tasks || [],
-  };
+    return {
+      board: parsed.item,
+      lists: (included.lists || []).sort(
+        (a, b) => (a.position ?? Infinity) - (b.position ?? Infinity)
+      ),
+      cards: included.cards || [],
+      labels: (included.labels || []).sort((a, b) => a.position - b.position),
+      cardLabels: included.cardLabels || [],
+      taskLists: (included.taskLists || []).sort(
+        (a, b) => a.position - b.position
+      ),
+      tasks: included.tasks || [],
+    };
+  });
 }
 
 /**

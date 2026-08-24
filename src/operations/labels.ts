@@ -2,6 +2,7 @@
  * Label operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { withBoardId } from "./board-id.js";
 import { parseInput } from "../errors.js";
 import { Label, CardLabel } from "../schemas/entities.js";
 import {
@@ -27,17 +28,19 @@ import { getCard } from "./cards.js";
 export async function createLabel(input: CreateLabelInput): Promise<Label> {
   const validated = parseInput(CreateLabelSchema, input);
 
-  const response = await plankaClient.post<unknown>(
-    `/api/boards/${validated.boardId}/labels`,
-    {
-      name: validated.name,
-      color: validated.color,
-      position: validated.position,
-    }
-  );
+  return withBoardId(validated.boardId, async (boardId) => {
+    const response = await plankaClient.post<unknown>(
+      `/api/boards/${boardId}/labels`,
+      {
+        name: validated.name,
+        color: validated.color,
+        position: validated.position,
+      }
+    );
 
-  const parsed = LabelResponse.parse(response);
-  return parsed.item;
+    const parsed = LabelResponse.parse(response);
+    return parsed.item;
+  });
 }
 
 /**
