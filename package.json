@@ -8,6 +8,9 @@
   "bin": {
     "planka-mcp": "dist/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist",
     "docs",
