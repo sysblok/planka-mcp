@@ -122,6 +122,13 @@ export const CardSchema = z.object({
   isCompleted: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string().nullable().optional(),
+  /**
+   * When the card entered its current list. Planka uses it as half of the
+   * pagination cursor of GET /api/lists/:id/cards (`before[id]` +
+   * `before[listChangedAt]`), so it has to survive parsing even though it is
+   * never displayed.
+   */
+  listChangedAt: z.string().nullable().optional(),
 });
 export type Card = z.infer<typeof CardSchema>;
 

@@ -197,8 +197,9 @@ export type UpdateListParamsInput = z.input<typeof UpdateListParamsSchema>;
 
 // Board requests
 export const GetCardsForListSchema = z.object({
-  boardId: requiredId("boardId"),
   listId: requiredId("listId"),
+  /** Resolving label names costs one extra GET on the board. */
+  withLabels: z.boolean().optional().default(true),
 });
 export type GetCardsForListInput = z.input<typeof GetCardsForListSchema>;
 

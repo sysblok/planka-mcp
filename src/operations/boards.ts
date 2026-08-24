@@ -12,7 +12,11 @@ import {
   TaskList,
   Task,
 } from "../schemas/entities.js";
-import { BoardResponse, BoardIncludedSchema } from "../schemas/responses.js";
+import {
+  BoardResponse,
+  BoardIncludedSchema,
+  CardsResponse,
+} from "../schemas/responses.js";
 import {
   BoardIdSchema,
   BoardIdInput,
@@ -129,14 +133,110 @@ export async function getBoardWithTaskCounts(
 }
 
 /**
- * Get cards for a specific list on a board.
+ * Cards of one list with labels resolved and task counts — WITHOUT pulling the
+ * whole board. Uses the native GET /api/lists/:id/cards endpoint (PLANKA 2.0),
+ * which includes cardLabels/taskLists/tasks but NOT the board's labels: names
+ * come from a single extra GET on the board, and only when withLabels is set.
  */
+export type CardWithLabels = CardWithTaskCounts & { labelNames: string[] };
+
+export interface ListCardsRawResult {
+  cards: CardWithLabels[];
+  /** true when pagination stopped before the list was exhausted. */
+  truncated: boolean;
+}
+
+/**
+ * Page size of GET /api/lists/:id/cards in Planka 2.x. It is not
+ * configurable: `limit` is ignored and `before` is a composite cursor
+ * (`before[id]` + `before[listChangedAt]`). Verified against the live API.
+ *
+ * Without following that cursor, a column of 77 cards answers 50 and says
+ * nothing about the other 27.
+ */
+const LIST_CARDS_PAGE_SIZE = 50;
+
+/** Safety ceiling: 20 pages = 1000 cards. */
+const LIST_CARDS_MAX_PAGES = 20;
+
 export async function getCardsForList(
   input: GetCardsForListInput
-): Promise<Card[]> {
-  const { boardId, listId } = parseInput(GetCardsForListSchema, input);
-  const details = await getBoard({ boardId });
-  return details.cards
-    .filter((card) => card.listId === listId)
-    .sort((a, b) => a.position - b.position);
+): Promise<ListCardsRawResult> {
+  const { listId, withLabels } = parseInput(GetCardsForListSchema, input);
+
+  const rawCards: Card[] = [];
+  const cardLabels: CardLabel[] = [];
+  const taskLists: TaskList[] = [];
+  const tasks: Task[] = [];
+  let cursor: { id: string; listChangedAt: string } | null = null;
+  let truncated = false;
+
+  for (let page = 0; page < LIST_CARDS_MAX_PAGES; page++) {
+    let path = `/api/lists/${listId}/cards`;
+    if (cursor) {
+      const query = new URLSearchParams({
+        "before[id]": cursor.id,
+        "before[listChangedAt]": cursor.listChangedAt,
+      });
+      path += `?${query.toString()}`;
+    }
+
+    const response = await plankaClient.get<unknown>(path);
+    const parsed = CardsResponse.parse(response);
+    const included = BoardIncludedSchema.parse(
+      (response as Record<string, unknown>).included || {}
+    );
+
+    rawCards.push(...parsed.items);
+    cardLabels.push(...(included.cardLabels || []));
+    taskLists.push(...(included.taskLists || []));
+    tasks.push(...(included.tasks || []));
+
+    if (parsed.items.length < LIST_CARDS_PAGE_SIZE) break;
+
+    const last = parsed.items[parsed.items.length - 1];
+    if (!last.listChangedAt) {
+      // No listChangedAt means no cursor is possible: warn instead of lying.
+      truncated = true;
+      break;
+    }
+    cursor = { id: last.id, listChangedAt: last.listChangedAt };
+    if (page === LIST_CARDS_MAX_PAGES - 1) truncated = true;
+  }
+
+  const cards = rawCards.sort((a, b) => a.position - b.position);
+
+  // labelId -> name (labels live on the board; one extra GET)
+  let labelNameById = new Map<string, string>();
+  if (withLabels && cards.length > 0 && cardLabels.length > 0) {
+    const board = await getBoard({ boardId: cards[0].boardId });
+    labelNameById = new Map(board.labels.map((l) => [l.id, l.name ?? l.color]));
+  }
+
+  const taskListToCard = new Map(taskLists.map((tl) => [tl.id, tl.cardId]));
+  const counts = new Map<string, { total: number; completed: number }>();
+  for (const task of tasks) {
+    const cardId = taskListToCard.get(task.taskListId);
+    if (!cardId) continue;
+    const c = counts.get(cardId) || { total: 0, completed: 0 };
+    c.total++;
+    if (task.isCompleted) c.completed++;
+    counts.set(cardId, c);
+  }
+
+  return {
+    truncated,
+    cards: cards.map((card) => {
+      const c = counts.get(card.id) || { total: 0, completed: 0 };
+      return {
+        ...card,
+        taskCount: c.total,
+        completedTaskCount: c.completed,
+        labelNames: cardLabels
+          .filter((cl) => cl.cardId === card.id)
+          .map((cl) => labelNameById.get(cl.labelId))
+          .filter((n): n is string => n !== undefined),
+      };
+    }),
+  };
 }
