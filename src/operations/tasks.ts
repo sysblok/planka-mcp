@@ -6,14 +6,22 @@
  * task-list when adding tasks to a card that doesn't have one.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import { Task, TaskList } from "../schemas/entities.js";
 import {
-  CreateTaskSchema,
-  UpdateTaskSchema,
   BatchCreateTasksSchema,
-  CreateTaskInput,
-  UpdateTaskInput,
   BatchCreateTasksInput,
+  CardIdInput,
+  CreateTaskListSchema,
+  CreateTaskListInput,
+  CreateTaskSchema,
+  CreateTaskInput,
+  TaskIdSchema,
+  TaskIdInput,
+  TaskListIdSchema,
+  TaskListIdInput,
+  UpdateTaskParamsSchema,
+  UpdateTaskParamsInput,
 } from "../schemas/requests.js";
 import { TaskResponse, TaskListResponse } from "../schemas/responses.js";
 import { getCard } from "./cards.js";
@@ -24,9 +32,13 @@ const DEFAULT_TASK_LIST_NAME = "Tasks";
  * Get or create a default task-list for a card.
  * If the card has no task-lists, creates one called "Tasks".
  */
-async function getOrCreateDefaultTaskList(cardId: string): Promise<TaskList> {
+async function getOrCreateDefaultTaskList(
+  input: CardIdInput
+): Promise<TaskList> {
+  const { cardId } = input;
+
   // Fetch card to see existing task-lists
-  const cardDetails = await getCard(cardId);
+  const cardDetails = await getCard({ cardId });
 
   // Check if there's an existing task-list
   if (cardDetails.taskLists && cardDetails.taskLists.length > 0) {
@@ -51,15 +63,15 @@ async function getOrCreateDefaultTaskList(cardId: string): Promise<TaskList> {
  * Create a task-list on a card.
  */
 export async function createTaskList(
-  cardId: string,
-  name: string,
-  position?: number
+  input: CreateTaskListInput
 ): Promise<TaskList> {
+  const validated = parseInput(CreateTaskListSchema, input);
+
   const response = await plankaClient.post<unknown>(
-    `/api/cards/${cardId}/task-lists`,
+    `/api/cards/${validated.cardId}/task-lists`,
     {
-      name,
-      position: position ?? 65536,
+      name: validated.name,
+      position: validated.position,
     }
   );
 
@@ -72,10 +84,12 @@ export async function createTaskList(
  * Automatically creates a default task-list if the card doesn't have one.
  */
 export async function createTask(input: CreateTaskInput): Promise<Task> {
-  const validated = CreateTaskSchema.parse(input);
+  const validated = parseInput(CreateTaskSchema, input);
 
   // Get or create a task-list for this card
-  const taskList = await getOrCreateDefaultTaskList(validated.cardId);
+  const taskList = await getOrCreateDefaultTaskList({
+    cardId: validated.cardId,
+  });
 
   const response = await plankaClient.post<unknown>(
     `/api/task-lists/${taskList.id}/tasks`,
@@ -95,10 +109,12 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
  * Automatically creates a default task-list if the card doesn't have one.
  */
 export async function createTasks(input: BatchCreateTasksInput): Promise<Task[]> {
-  const validated = BatchCreateTasksSchema.parse(input);
+  const validated = parseInput(BatchCreateTasksSchema, input);
 
   // Get or create a task-list for this card
-  const taskList = await getOrCreateDefaultTaskList(validated.cardId);
+  const taskList = await getOrCreateDefaultTaskList({
+    cardId: validated.cardId,
+  });
 
   const tasks: Task[] = [];
   let position = 65536;
@@ -124,14 +140,13 @@ export async function createTasks(input: BatchCreateTasksInput): Promise<Task[]>
  * Update a task's properties.
  */
 export async function updateTask(
-  taskId: string,
-  input: UpdateTaskInput
+  input: UpdateTaskParamsInput
 ): Promise<Task> {
-  const validated = UpdateTaskSchema.parse(input);
+  const { taskId, ...updates } = parseInput(UpdateTaskParamsSchema, input);
 
   const response = await plankaClient.patch<unknown>(
     `/api/tasks/${taskId}`,
-    validated
+    updates
   );
 
   const parsed = TaskResponse.parse(response);
@@ -141,13 +156,15 @@ export async function updateTask(
 /**
  * Delete a task.
  */
-export async function deleteTask(taskId: string): Promise<void> {
+export async function deleteTask(input: TaskIdInput): Promise<void> {
+  const { taskId } = parseInput(TaskIdSchema, input);
   await plankaClient.delete(`/api/tasks/${taskId}`);
 }
 
 /**
  * Delete a task-list and all its tasks.
  */
-export async function deleteTaskList(taskListId: string): Promise<void> {
+export async function deleteTaskList(input: TaskListIdInput): Promise<void> {
+  const { taskListId } = parseInput(TaskListIdSchema, input);
   await plankaClient.delete(`/api/task-lists/${taskListId}`);
 }

@@ -21,6 +21,14 @@ export const allTools = [
 ];
 
 /**
+ * Content blocks a tool may return.
+ * "image" lets the model actually SEE an attached screenshot (base64).
+ */
+export type ToolContent =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string };
+
+/**
  * Tool type definition.
  */
 export interface Tool {
@@ -32,7 +40,7 @@ export interface Tool {
     required?: string[];
   };
   handler: (params: unknown) => Promise<{
-    content: Array<{ type: "text"; text: string }>;
+    content: ToolContent[];
     isError?: boolean;
   }>;
 }
@@ -42,6 +50,22 @@ export interface Tool {
  */
 export function getTool(name: string): Tool | undefined {
   return allTools.find((tool) => tool.name === name) as Tool | undefined;
+}
+
+/**
+ * Required inputSchema fields that never arrived.
+ *
+ * The inputSchema is JSON Schema, not Zod: this only checks presence, which is
+ * what stops a missing `tasks` from blowing up inside the handler as "Cannot
+ * read properties of undefined (reading 'map')".
+ */
+export function findMissingRequiredArgs(tool: Tool, args: unknown): string[] {
+  const required = tool.inputSchema.required ?? [];
+  const received =
+    args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  return required.filter(
+    (field) => received[field] === undefined || received[field] === null
+  );
 }
 
 /**

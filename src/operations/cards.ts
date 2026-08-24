@@ -2,14 +2,17 @@
  * Card operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import { Card, TaskList, Task, Comment, Label, CardLabel, Attachment } from "../schemas/entities.js";
 import {
+  CardIdSchema,
+  CardIdInput,
   CreateCardSchema,
-  UpdateCardSchema,
-  MoveCardSchema,
   CreateCardInput,
-  UpdateCardInput,
+  MoveCardSchema,
   MoveCardInput,
+  UpdateCardParamsSchema,
+  UpdateCardParamsInput,
 } from "../schemas/requests.js";
 import { CardResponse, CardIncludedSchema } from "../schemas/responses.js";
 import { getCommentsForCard, CommentWithAuthor } from "./comments.js";
@@ -31,7 +34,7 @@ export interface CardDetails {
  * Create a new card in a list.
  */
 export async function createCard(input: CreateCardInput): Promise<Card> {
-  const validated = CreateCardSchema.parse(input);
+  const validated = parseInput(CreateCardSchema, input);
 
   const response = await plankaClient.post<unknown>(
     `/api/lists/${validated.listId}/cards`,
@@ -51,13 +54,15 @@ export async function createCard(input: CreateCardInput): Promise<Card> {
 /**
  * Get a card by ID with all related entities.
  */
-export async function getCard(cardId: string): Promise<CardDetails> {
+export async function getCard(input: CardIdInput): Promise<CardDetails> {
+  const { cardId } = parseInput(CardIdSchema, input);
+
   // PLANKA 2.x doesn't include comments in the card response; fetch them
   // from their own endpoint alongside. Fall back to `included` (pre-2.x)
   // if that endpoint fails.
   const [response, fetchedComments] = await Promise.all([
     plankaClient.get<unknown>(`/api/cards/${cardId}`),
-    getCommentsForCard(cardId).catch(() => null),
+    getCommentsForCard({ cardId }).catch(() => null),
   ]);
   const parsed = CardResponse.parse(response);
   const included = CardIncludedSchema.parse(
@@ -83,14 +88,13 @@ export async function getCard(cardId: string): Promise<CardDetails> {
  * Update a card's properties.
  */
 export async function updateCard(
-  cardId: string,
-  input: UpdateCardInput
+  input: UpdateCardParamsInput
 ): Promise<Card> {
-  const validated = UpdateCardSchema.parse(input);
+  const { cardId, ...updates } = parseInput(UpdateCardParamsSchema, input);
 
   const response = await plankaClient.patch<unknown>(
     `/api/cards/${cardId}`,
-    validated
+    updates
   );
 
   const parsed = CardResponse.parse(response);
@@ -101,7 +105,7 @@ export async function updateCard(
  * Move a card to a different list/position.
  */
 export async function moveCard(input: MoveCardInput): Promise<Card> {
-  const validated = MoveCardSchema.parse(input);
+  const validated = parseInput(MoveCardSchema, input);
 
   const updatePayload: Record<string, unknown> = {
     listId: validated.listId,
@@ -124,6 +128,7 @@ export async function moveCard(input: MoveCardInput): Promise<Card> {
 /**
  * Delete a card.
  */
-export async function deleteCard(cardId: string): Promise<void> {
+export async function deleteCard(input: CardIdInput): Promise<void> {
+  const { cardId } = parseInput(CardIdSchema, input);
   await plankaClient.delete(`/api/cards/${cardId}`);
 }

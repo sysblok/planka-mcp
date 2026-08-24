@@ -6,6 +6,7 @@ import {
   updateList,
   deleteList,
 } from "../operations/lists.js";
+import { UpdateListParamsInput } from "../schemas/requests.js";
 import { PlankaError } from "../errors.js";
 
 /**
@@ -122,12 +123,12 @@ export const manageListsTool = {
             };
           }
 
-          const updates: Record<string, unknown> = {};
+          const updates: UpdateListParamsInput = { listId: params.listId };
           if (params.name !== undefined) updates.name = params.name;
           if (params.position !== undefined) updates.position = params.position;
           if (params.type !== undefined) updates.type = params.type;
 
-          const list = await updateList(params.listId, updates);
+          const list = await updateList(updates);
 
           return {
             content: [
@@ -163,7 +164,7 @@ export const manageListsTool = {
             };
           }
 
-          await deleteList(params.listId);
+          await deleteList({ listId: params.listId });
 
           return {
             content: [

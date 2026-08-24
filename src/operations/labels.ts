@@ -2,14 +2,21 @@
  * Label operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import { Label, CardLabel } from "../schemas/entities.js";
 import {
-  CreateLabelSchema,
-  UpdateLabelSchema,
   AddLabelToCardSchema,
-  CreateLabelInput,
-  UpdateLabelInput,
   AddLabelToCardInput,
+  CreateLabelSchema,
+  CreateLabelInput,
+  LabelIdSchema,
+  LabelIdInput,
+  RemoveLabelFromCardSchema,
+  RemoveLabelFromCardInput,
+  SetCardLabelsSchema,
+  SetCardLabelsInput,
+  UpdateLabelParamsSchema,
+  UpdateLabelParamsInput,
 } from "../schemas/requests.js";
 import { LabelResponse, CardLabelResponse } from "../schemas/responses.js";
 import { getCard } from "./cards.js";
@@ -18,7 +25,7 @@ import { getCard } from "./cards.js";
  * Create a new label on a board.
  */
 export async function createLabel(input: CreateLabelInput): Promise<Label> {
-  const validated = CreateLabelSchema.parse(input);
+  const validated = parseInput(CreateLabelSchema, input);
 
   const response = await plankaClient.post<unknown>(
     `/api/boards/${validated.boardId}/labels`,
@@ -37,14 +44,13 @@ export async function createLabel(input: CreateLabelInput): Promise<Label> {
  * Update a label's properties.
  */
 export async function updateLabel(
-  labelId: string,
-  input: UpdateLabelInput
+  input: UpdateLabelParamsInput
 ): Promise<Label> {
-  const validated = UpdateLabelSchema.parse(input);
+  const { labelId, ...updates } = parseInput(UpdateLabelParamsSchema, input);
 
   const response = await plankaClient.patch<unknown>(
     `/api/labels/${labelId}`,
-    validated
+    updates
   );
 
   const parsed = LabelResponse.parse(response);
@@ -54,7 +60,8 @@ export async function updateLabel(
 /**
  * Delete a label.
  */
-export async function deleteLabel(labelId: string): Promise<void> {
+export async function deleteLabel(input: LabelIdInput): Promise<void> {
+  const { labelId } = parseInput(LabelIdSchema, input);
   await plankaClient.delete(`/api/labels/${labelId}`);
 }
 
@@ -63,7 +70,7 @@ export async function deleteLabel(labelId: string): Promise<void> {
  * Uses PLANKA 2.0 /card-labels endpoint.
  */
 export async function addLabelToCard(input: AddLabelToCardInput): Promise<CardLabel> {
-  const validated = AddLabelToCardSchema.parse(input);
+  const validated = parseInput(AddLabelToCardSchema, input);
 
   const response = await plankaClient.post<unknown>(
     `/api/cards/${validated.cardId}/card-labels`,
@@ -85,9 +92,9 @@ export async function addLabelToCard(input: AddLabelToCardInput): Promise<CardLa
  * label silently stays on the card. Verified against PLANKA 2.x on 2026-08-02.
  */
 export async function removeLabelFromCard(
-  cardId: string,
-  labelId: string
+  input: RemoveLabelFromCardInput
 ): Promise<void> {
+  const { cardId, labelId } = parseInput(RemoveLabelFromCardSchema, input);
   await plankaClient.delete(
     `/api/cards/${cardId}/card-labels/labelId:${labelId}`
   );
@@ -122,14 +129,16 @@ export interface SetCardLabelsResult {
  * request. Never reports success for a label that did not land.
  */
 export async function setCardLabels(
-  cardId: string,
-  addLabelIds?: string[],
-  removeLabelIds?: string[]
+  input: SetCardLabelsInput
 ): Promise<SetCardLabelsResult> {
+  const { cardId, addLabelIds, removeLabelIds } = parseInput(
+    SetCardLabelsSchema,
+    input
+  );
   const toAdd = addLabelIds ?? [];
   const toRemove = removeLabelIds ?? [];
 
-  const before = await getCard(cardId);
+  const before = await getCard({ cardId });
   const presentBefore = new Set(before.cardLabels.map((cl) => cl.labelId));
 
   const result: SetCardLabelsResult = {
@@ -148,7 +157,7 @@ export async function setCardLabels(
       continue;
     }
     try {
-      await removeLabelFromCard(cardId, labelId);
+      await removeLabelFromCard({ cardId, labelId });
     } catch (error) {
       result.failed.push({
         labelId,
@@ -176,7 +185,7 @@ export async function setCardLabels(
   }
 
   // Verify against the card itself: this is what makes the report trustworthy.
-  const after = await getCard(cardId);
+  const after = await getCard({ cardId });
   const presentAfter = new Set(after.cardLabels.map((cl) => cl.labelId));
   result.finalLabelIds = [...presentAfter];
 

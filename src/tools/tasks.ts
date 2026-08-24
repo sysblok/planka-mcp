@@ -2,6 +2,7 @@
  * Task tools for PLANKA MCP server.
  */
 import { createTasks, updateTask, deleteTask } from "../operations/tasks.js";
+import { UpdateTaskParamsInput } from "../schemas/requests.js";
 import { PlankaError } from "../errors.js";
 
 /**
@@ -100,12 +101,12 @@ export const updateTaskTool = {
       const { taskId, ...updates } = params;
 
       // Only include defined fields
-      const filteredUpdates: Record<string, unknown> = {};
-      if (updates.name !== undefined) filteredUpdates.name = updates.name;
+      const patch: UpdateTaskParamsInput = { taskId };
+      if (updates.name !== undefined) patch.name = updates.name;
       if (updates.isCompleted !== undefined)
-        filteredUpdates.isCompleted = updates.isCompleted;
+        patch.isCompleted = updates.isCompleted;
 
-      const task = await updateTask(taskId, filteredUpdates);
+      const task = await updateTask(patch);
 
       return {
         content: [
@@ -157,7 +158,7 @@ export const deleteTaskTool = {
   },
   handler: async (params: { taskId: string }) => {
     try {
-      await deleteTask(params.taskId);
+      await deleteTask({ taskId: params.taskId });
 
       return {
         content: [

@@ -1,8 +1,46 @@
 /**
- * Request body schemas for PLANKA API operations.
+ * Input schemas for PLANKA API operations.
+ *
+ * Every operation takes ONE object and validates it here, identifiers
+ * included. Field names match the MCP tools' inputSchema (`cardId`, `listId`,
+ * `boardId`, …) so a Zod error path points straight at the argument the model
+ * sent.
  */
 import { z } from "zod";
 import { CardTypeSchema, LabelColorSchema, ListTypeSchema } from "./entities.js";
+
+/** Required identifier; the field name travels inside the error message. */
+const requiredId = (field: string) =>
+  z.string().min(1, `${field} is required and cannot be empty`);
+
+// Identifier-only inputs (get / delete / list by parent)
+export const CardIdSchema = z.object({ cardId: requiredId("cardId") });
+export type CardIdInput = z.input<typeof CardIdSchema>;
+
+export const BoardIdSchema = z.object({ boardId: requiredId("boardId") });
+export type BoardIdInput = z.input<typeof BoardIdSchema>;
+
+export const ListIdSchema = z.object({ listId: requiredId("listId") });
+export type ListIdInput = z.input<typeof ListIdSchema>;
+
+export const LabelIdSchema = z.object({ labelId: requiredId("labelId") });
+export type LabelIdInput = z.input<typeof LabelIdSchema>;
+
+export const CommentIdSchema = z.object({ commentId: requiredId("commentId") });
+export type CommentIdInput = z.input<typeof CommentIdSchema>;
+
+export const TaskIdSchema = z.object({ taskId: requiredId("taskId") });
+export type TaskIdInput = z.input<typeof TaskIdSchema>;
+
+export const TaskListIdSchema = z.object({
+  taskListId: requiredId("taskListId"),
+});
+export type TaskListIdInput = z.input<typeof TaskListIdSchema>;
+
+export const AttachmentIdSchema = z.object({
+  attachmentId: requiredId("attachmentId"),
+});
+export type AttachmentIdInput = z.input<typeof AttachmentIdSchema>;
 
 // Card requests
 export const CreateCardSchema = z.object({
@@ -25,6 +63,11 @@ export const UpdateCardSchema = z.object({
   position: z.number().optional(),
 });
 export type UpdateCardInput = z.input<typeof UpdateCardSchema>;
+
+export const UpdateCardParamsSchema = UpdateCardSchema.extend({
+  cardId: requiredId("cardId"),
+});
+export type UpdateCardParamsInput = z.input<typeof UpdateCardParamsSchema>;
 
 export const MoveCardSchema = z.object({
   cardId: z.string(),
@@ -49,6 +92,11 @@ export const UpdateTaskSchema = z.object({
 });
 export type UpdateTaskInput = z.input<typeof UpdateTaskSchema>;
 
+export const UpdateTaskParamsSchema = UpdateTaskSchema.extend({
+  taskId: requiredId("taskId"),
+});
+export type UpdateTaskParamsInput = z.input<typeof UpdateTaskParamsSchema>;
+
 export const BatchCreateTasksSchema = z.object({
   cardId: z.string(),
   tasks: z.array(
@@ -59,6 +107,13 @@ export const BatchCreateTasksSchema = z.object({
   ),
 });
 export type BatchCreateTasksInput = z.input<typeof BatchCreateTasksSchema>;
+
+export const CreateTaskListSchema = z.object({
+  cardId: requiredId("cardId"),
+  name: z.string().min(1, "Task-list name required"),
+  position: z.number().optional().default(65536),
+});
+export type CreateTaskListInput = z.input<typeof CreateTaskListSchema>;
 
 // Label requests
 export const CreateLabelSchema = z.object({
@@ -76,6 +131,11 @@ export const UpdateLabelSchema = z.object({
 });
 export type UpdateLabelInput = z.input<typeof UpdateLabelSchema>;
 
+export const UpdateLabelParamsSchema = UpdateLabelSchema.extend({
+  labelId: requiredId("labelId"),
+});
+export type UpdateLabelParamsInput = z.input<typeof UpdateLabelParamsSchema>;
+
 export const AddLabelToCardSchema = z.object({
   cardId: z.string(),
   labelId: z.string(),
@@ -88,6 +148,13 @@ export const RemoveLabelFromCardSchema = z.object({
 });
 export type RemoveLabelFromCardInput = z.input<typeof RemoveLabelFromCardSchema>;
 
+export const SetCardLabelsSchema = z.object({
+  cardId: requiredId("cardId"),
+  addLabelIds: z.array(z.string().min(1)).optional(),
+  removeLabelIds: z.array(z.string().min(1)).optional(),
+});
+export type SetCardLabelsInput = z.input<typeof SetCardLabelsSchema>;
+
 // Comment requests
 export const CreateCommentSchema = z.object({
   cardId: z.string(),
@@ -99,6 +166,13 @@ export const UpdateCommentSchema = z.object({
   text: z.string().min(1),
 });
 export type UpdateCommentInput = z.input<typeof UpdateCommentSchema>;
+
+export const UpdateCommentParamsSchema = UpdateCommentSchema.extend({
+  commentId: requiredId("commentId"),
+});
+export type UpdateCommentParamsInput = z.input<
+  typeof UpdateCommentParamsSchema
+>;
 
 // List requests
 export const CreateListSchema = z.object({
@@ -115,3 +189,21 @@ export const UpdateListSchema = z.object({
   type: ListTypeSchema.optional(),
 });
 export type UpdateListInput = z.input<typeof UpdateListSchema>;
+
+export const UpdateListParamsSchema = UpdateListSchema.extend({
+  listId: requiredId("listId"),
+});
+export type UpdateListParamsInput = z.input<typeof UpdateListParamsSchema>;
+
+// Board requests
+export const GetCardsForListSchema = z.object({
+  boardId: requiredId("boardId"),
+  listId: requiredId("listId"),
+});
+export type GetCardsForListInput = z.input<typeof GetCardsForListSchema>;
+
+// Project requests
+export const GetStructureSchema = z.object({
+  projectId: z.string().min(1).optional(),
+});
+export type GetStructureInput = z.input<typeof GetStructureSchema>;

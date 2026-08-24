@@ -86,7 +86,7 @@ export const getCommentsTool = {
   },
   handler: async (params: { cardId: string }) => {
     try {
-      const comments = await getCommentsForCard(params.cardId);
+      const comments = await getCommentsForCard({ cardId: params.cardId });
 
       return {
         content: [

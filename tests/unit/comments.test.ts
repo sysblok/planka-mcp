@@ -35,7 +35,7 @@ describe("getCommentsForCard", () => {
       },
     });
 
-    await expect(getCommentsForCard("card-1")).resolves.toMatchObject([
+    await expect(getCommentsForCard({ cardId: "card-1" })).resolves.toMatchObject([
       { id: "comment-1", authorName: "Agent User" },
     ]);
     expect(mocks.get).toHaveBeenCalledWith("/api/cards/card-1/comments");

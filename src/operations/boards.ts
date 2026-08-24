@@ -2,6 +2,7 @@
  * Board operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { parseInput } from "../errors.js";
 import {
   Board,
   List,
@@ -12,6 +13,12 @@ import {
   Task,
 } from "../schemas/entities.js";
 import { BoardResponse, BoardIncludedSchema } from "../schemas/responses.js";
+import {
+  BoardIdSchema,
+  BoardIdInput,
+  GetCardsForListSchema,
+  GetCardsForListInput,
+} from "../schemas/requests.js";
 
 /**
  * Full board details with all included entities.
@@ -37,7 +44,9 @@ export interface CardWithTaskCounts extends Card {
 /**
  * Get a board by ID with all included entities.
  */
-export async function getBoard(boardId: string): Promise<BoardDetails> {
+export async function getBoard(input: BoardIdInput): Promise<BoardDetails> {
+  const { boardId } = parseInput(BoardIdSchema, input);
+
   const response = await plankaClient.get<unknown>(`/api/boards/${boardId}`);
   const parsed = BoardResponse.parse(response);
   const included = BoardIncludedSchema.parse(
@@ -61,7 +70,7 @@ export async function getBoard(boardId: string): Promise<BoardDetails> {
  * Get a board with cards enriched with task counts.
  */
 export async function getBoardWithTaskCounts(
-  boardId: string
+  input: BoardIdInput
 ): Promise<{
   board: Board;
   lists: List[];
@@ -69,7 +78,8 @@ export async function getBoardWithTaskCounts(
   labels: Label[];
   cardLabels: CardLabel[];
 }> {
-  const details = await getBoard(boardId);
+  const { boardId } = parseInput(BoardIdSchema, input);
+  const details = await getBoard({ boardId });
 
   // Build taskList -> cardId mapping (PLANKA 2.0: tasks belong to taskLists, not cards directly)
   const taskListToCard = new Map<string, string>();
@@ -122,10 +132,10 @@ export async function getBoardWithTaskCounts(
  * Get cards for a specific list on a board.
  */
 export async function getCardsForList(
-  boardId: string,
-  listId: string
+  input: GetCardsForListInput
 ): Promise<Card[]> {
-  const details = await getBoard(boardId);
+  const { boardId, listId } = parseInput(GetCardsForListSchema, input);
+  const details = await getBoard({ boardId });
   return details.cards
     .filter((card) => card.listId === listId)
     .sort((a, b) => a.position - b.position);
