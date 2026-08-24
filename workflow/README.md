@@ -1,7 +1,7 @@
 # A board that survives the session
 
 This is an optional working method built around the MCP server in this repository.
-You do not need it to use the 15 Planka tools.
+You do not need it to use the 24 Planka tools.
 
 ## The problem it solves
 
