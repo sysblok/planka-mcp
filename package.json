@@ -29,7 +29,7 @@
     "build": "npm run check:identity && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:smoke": "node tests/smoke/planka-smoke.mjs",
+    "test:smoke": "npm run build && node tests/smoke/planka-smoke.mjs",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm test"
   },
