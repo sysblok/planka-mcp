@@ -29,6 +29,8 @@ Text search (query/search) matches card name and description, case- and accent-i
 
 Resuming work you did not start: planka_board_activity says what moved on the board and who moved it since a given date. Planka logs only card creation, moves, member changes and task completion, so comments and edits leave no trace there.
 
+Writes are one tool per action: planka_create_/update_/delete_ label, list and comment. The planka_manage_* names and planka_add_comment still work but are DEPRECATED aliases.
+
 Writes re-read what they touched and report what actually landed. Trust the verified and finalLabelIds fields of the response, not the arguments you sent; a request that returns without them did not confirm anything.
 
 Planka answers 404 where it means 403. A "not found" on a write, with an ID that read fine a moment ago, is almost always a missing permission for the agent user, not a wrong ID.`;

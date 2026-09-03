@@ -14,6 +14,7 @@ import { memberTools } from "./members.js";
 import { userTools } from "./users.js";
 import { cardOpsTools } from "./card-ops.js";
 import { toolPresentation } from "./annotations.js";
+import { missingRequiredArgs } from "./dispatch.js";
 import {
   AccessPolicy,
   getPolicy,
@@ -102,18 +103,34 @@ export function getTool(
 /**
  * Required inputSchema fields that never arrived.
  *
- * The inputSchema is JSON Schema, not Zod: this only checks presence, which is
- * what stops a missing `tasks` from blowing up inside the handler as "Cannot
- * read properties of undefined (reading 'map')".
+ * With one tool per action (create/update/delete instead of a `manage_*` enum)
+ * `required` is finally expressive enough for this generic check to carry the
+ * weight the hand-written guards used to.
  */
 export function findMissingRequiredArgs(tool: Tool, args: unknown): string[] {
-  const required = tool.inputSchema.required ?? [];
-  const received =
-    args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-  return required.filter(
-    (field) => received[field] === undefined || received[field] === null
-  );
+  return missingRequiredArgs(tool.inputSchema, args);
 }
+
+/**
+ * Tools kept only so callers written against the old names keep working.
+ *
+ * Each one routes to the create_/update_/delete_ tool that replaced it and adds
+ * nothing else. They are still callable when hidden — a model working from a
+ * cached tools/list must get the real behaviour, not "unknown tool".
+ *
+ * `PLANKA_HIDE_DEPRECATED=true` drops them from tools/list, which is worth a
+ * few hundred characters of context per session on a deployment that has
+ * already migrated.
+ */
+export const DEPRECATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "planka_manage_labels",
+  "planka_manage_lists",
+  "planka_manage_comment",
+  "planka_add_comment",
+  // Not an alias, but its own description opens with DEPRECATED: the summary
+  // plus find_cards replaced it, and it is the most expensive read here.
+  "planka_get_board",
+]);
 
 /**
  * With a default board configured, `boardId` stops being mandatory.
@@ -157,6 +174,10 @@ function applyDefaultBoard(
 export function getToolDefinitions(policy: AccessPolicy = getPolicy()) {
   return allTools
     .filter((tool) => isToolVisible(tool.name, policy))
+    .filter(
+      (tool) =>
+        !(policy.hideDeprecated && DEPRECATED_TOOL_NAMES.has(tool.name))
+    )
     .map((tool) => {
       // Annotations live in their own map; forgetting to spread them here is how
       // they get silently dropped from tools/list.
@@ -187,6 +208,7 @@ export { activityTools } from "./activity.js";
 export { memberTools } from "./members.js";
 export { userTools } from "./users.js";
 export { cardOpsTools } from "./card-ops.js";
+export { missingRequiredArgs } from "./dispatch.js";
 export {
   toolPresentation,
   TOOLS_REQUIRING_USER_INTERACTION,

@@ -1,6 +1,6 @@
 # planka-mcp
 
-Manejá un tablero Planka 2.x desde Claude Code mediante 32 tools MCP.
+Manejá un tablero Planka 2.x desde Claude Code mediante 41 tools MCP.
 Las escrituras se releen y verifican: un éxito informado coincide con el board.
 Un flujo opcional convierte ese board en memoria durable para el trabajo con agentes.
 
@@ -194,7 +194,8 @@ una versión vieja.
 | `PLANKA_DEFAULT_BOARD_ID` | un board id | `boardId` pasa a ser opcional en todas las tools que lo toman, y cae en este board. Ahorra el `planka_get_structure` que el agente hace sólo para recuperar un id que nunca cambia |
 | `PLANKA_ALLOWED_BOARD_IDS` | board ids separados por coma | Los boards fuera de la lista se filtran de `planka_get_structure`, y cualquier llamada que nombre uno se rechaza antes de que el request salga del proceso |
 | `PLANKA_ALLOWED_PROJECT_IDS` | project ids separados por coma | Lo mismo, un nivel más arriba |
-| `PLANKA_READ_ONLY` | `true` o `1` | Las catorce tools de escritura desaparecen del `tools/list` y se rechazan si igual las llaman |
+| `PLANKA_READ_ONLY` | `true` o `1` | Las veintisiete tools de escritura desaparecen del `tools/list` y se rechazan si igual las llaman |
+| `PLANKA_HIDE_DEPRECATED` | `true` o `1` | Saca del `tools/list` las cinco tools deprecadas (`manage_labels`, `manage_lists`, `manage_comment`, `add_comment`, `get_board`) y ahorra ~4,7 kB de contexto. Siguen siendo llamables, así que un tool list cacheado sigue funcionando |
 | `PLANKA_DISABLED_TOOLS` | nombres de tool separados por coma | Apaga tools puntuales. El prefijo `planka_` es opcional: `get_board` y `planka_get_board` son lo mismo |
 | `PLANKA_PROTECTED_LIST_IDS` | list ids separados por coma | Rechaza crear o mover cards **hacia** esas listas, y editar o borrar las listas mismas |
 | `PLANKA_SUMMARY_DECISION_LISTS` | nombres o ids de columna separados por coma | De qué columnas trae cards `planka_board_summary` cuando la llamada no lo dice. Sin setear: no devuelve cards, sólo la forma del board |
@@ -235,7 +236,7 @@ Ejemplo — un agente que lee un board y comenta, y nada más:
 }
 ```
 
-## Las 32 tools
+## Las 41 tools
 
 Los IDs son strings. Empezá con `planka_get_structure` y usá los IDs que devuelve
 Planka; no los adivines.
@@ -256,12 +257,21 @@ Planka; no los adivines.
 | `planka_create_tasks` | Agrega tareas de checklist a una card |
 | `planka_update_task` | Renombra o completa una tarea |
 | `planka_delete_task` | Borra una tarea |
-| `planka_manage_labels` | Crea, actualiza o borra labels del board |
+| `planka_create_label` | Crea un label en el board |
+| `planka_update_label` | Renombra un label o le cambia el color |
+| `planka_delete_label` | Borra un label del board y de todas las cards que lo tenían |
+| `planka_manage_labels` | **Deprecada.** Alias que rutea `action` a las tres de arriba |
 | `planka_set_card_labels` | Agrega o quita labels y verifica el estado final |
-| `planka_add_comment` | Agrega un comentario por el endpoint dedicado de Planka 2.x |
+| `planka_create_comment` | Agrega un comentario por el endpoint dedicado de Planka 2.x |
 | `planka_get_comments` | Comentarios paginados (`limit`, `beforeId`, `all`) |
-| `planka_manage_comment` | Edita o borra un comentario existente |
-| `planka_manage_lists` | Crea, actualiza o borra listas del board |
+| `planka_update_comment` | Reescribe un comentario existente |
+| `planka_delete_comment` | Borra un comentario |
+| `planka_add_comment` | **Deprecada.** Alias de `planka_create_comment` |
+| `planka_manage_comment` | **Deprecada.** Alias que rutea `action` a update/delete |
+| `planka_create_list` | Crea una lista (columna) en un board |
+| `planka_update_list` | Renombra, reubica o reclasifica una columna |
+| `planka_delete_list` | Borra una columna **y todas sus cards** |
+| `planka_manage_lists` | **Deprecada.** Alias que rutea `action` a las tres de arriba |
 | `planka_add_attachment` | Sube un archivo local a una card y verifica que quedó |
 | `planka_get_attachments` | Lista los adjuntos de una card con tipo, tamaño y URL de descarga |
 | `planka_view_attachment` | Devuelve el contenido de un adjunto; las imágenes vuelven visibles |
@@ -349,7 +359,7 @@ npm test
 ```
 
 El smoke real es opt-in porque modifica un board escribible y después limpia lo
-creado. Ejercita las 32 tools por stdio y contrasta cada escritura contra la API
+creado. Ejercita las 41 tools por stdio y contrasta cada escritura contra la API
 cruda de Planka: más de 90 checks con nombre.
 
 ```bash

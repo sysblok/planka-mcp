@@ -137,7 +137,7 @@ be verified through its card — which is why `planka_update_task` and
 **Planka 2.x behavior:** `DELETE /api/lists/:id` removes the column **and every
 card in it**, with no warning and no undo.
 
-The tool description and the docs now say so out loud, and `planka_manage_lists`
+The tool description and the docs now say so out loud, and `planka_delete_list`
 confirms the deletion by re-reading the board. There is no server-side guard:
 move the cards out first.
 

@@ -16,15 +16,16 @@ import {
   writeResult,
 } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
+import { dispatchAction } from "./dispatch.js";
+import { guarded } from "./guard.js";
 
 /**
- * Tool: planka_add_comment
- * Add a comment to a card.
+ * Tool: planka_create_comment
  */
-export const addCommentTool = {
-  name: "planka_add_comment",
+export const createCommentTool = {
+  name: "planka_create_comment",
   description:
-    "Comment on a card: status updates, notes, agent activity logs.",
+    "Comment on a card: status updates, notes, agent activity logs. Verified by re-reading the card's comments.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -39,8 +40,8 @@ export const addCommentTool = {
     },
     required: ["cardId", "text"],
   },
-  handler: async (params: { cardId: string; text: string }) => {
-    try {
+  handler: async (params: { cardId: string; text: string }) =>
+    guarded(async () => {
       const written = await verifiedWrite({
         write: () =>
           createComment({ cardId: params.cardId, text: params.text }),
@@ -60,16 +61,19 @@ export const addCommentTool = {
         },
         written
       );
-    } catch (error) {
-      if (error instanceof PlankaError) {
-        return {
-          content: [{ type: "text" as const, text: `Error: ${error.message}` }],
-          isError: true,
-        };
-      }
-      throw error;
-    }
-  },
+    }),
+};
+
+/**
+ * Tool: planka_add_comment (DEPRECATED alias of planka_create_comment)
+ */
+export const addCommentTool = {
+  name: "planka_add_comment",
+  description:
+    "DEPRECATED: use planka_create_comment. Kept so existing callers keep working; it forwards every argument unchanged.",
+  inputSchema: createCommentTool.inputSchema,
+  handler: (params: { cardId: string; text: string }) =>
+    createCommentTool.handler(params),
 };
 
 /** Comments returned when the caller does not say. Planka's page holds 50. */
@@ -172,13 +176,93 @@ export const getCommentsTool = {
 };
 
 /**
- * Tool: planka_manage_comment
- * Update or delete an existing comment.
+ * Tool: planka_update_comment
+ */
+export const updateCommentTool = {
+  name: "planka_update_comment",
+  description:
+    "Rewrite a comment, by ID from planka_get_comments. Only the agent user's own comments. Verified by re-reading the card's comments.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      commentId: { type: "string", description: "The comment ID" },
+      text: { type: "string", description: "New comment text (markdown supported)" },
+    },
+    required: ["commentId", "text"],
+  },
+  handler: async (params: { commentId: string; text: string }) =>
+    guarded(async () => {
+      const written = await verifiedWrite({
+        write: () =>
+          updateComment({ commentId: params.commentId, text: params.text }),
+        reread: (comment) => getCommentsForCard({ cardId: comment.cardId }),
+        landed: (comments) =>
+          comments.some(
+            (c) => c.id === params.commentId && c.text === params.text
+          ),
+      });
+
+      return writeResult(
+        {
+          cardId: written.result.cardId,
+          comment: {
+            id: written.result.id,
+            text: written.result.text,
+            updatedAt: written.result.updatedAt,
+          },
+        },
+        written
+      );
+    }),
+};
+
+/**
+ * Tool: planka_delete_comment
+ */
+export const deleteCommentTool = {
+  name: "planka_delete_comment",
+  description:
+    "Delete a comment, by ID from planka_get_comments. Only the agent user's own comments. Confirmed by re-reading the card's comments.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      commentId: { type: "string", description: "The comment ID" },
+    },
+    required: ["commentId"],
+  },
+  handler: async (params: { commentId: string }) =>
+    guarded(async () => {
+      const deleted = await verifiedDelete({
+        del: () => deleteComment({ commentId: params.commentId }),
+        confirmGone: async (comment) => {
+          if (!comment) return null;
+          const after = await getCommentsForCard({ cardId: comment.cardId });
+          return !after.some((c) => c.id === params.commentId);
+        },
+        unknownReason:
+          "Planka did not echo the deleted comment, so its card is unknown and the delete could not be confirmed",
+      });
+
+      return writeResult(
+        {
+          commentId: params.commentId,
+          ...(deleted.result ? { cardId: deleted.result.cardId } : {}),
+          message: deleted.verified
+            ? `Comment ${params.commentId} deleted`
+            : `Comment ${params.commentId} delete not confirmed`,
+        },
+        deleted
+      );
+    }),
+};
+
+/**
+ * Tool: planka_manage_comment (DEPRECATED alias)
  */
 export const manageCommentTool = {
   name: "planka_manage_comment",
   description:
-    "Update or delete a comment, by ID from planka_get_comments. Only the agent user's own comments.",
+    "DEPRECATED: use planka_update_comment / planka_delete_comment (and planka_create_comment to write one). Kept so existing callers keep working; it only routes `action` to those tools.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -187,14 +271,8 @@ export const manageCommentTool = {
         enum: ["update", "delete"],
         description: "Action to perform",
       },
-      commentId: {
-        type: "string",
-        description: "The comment ID",
-      },
-      text: {
-        type: "string",
-        description: "New comment text (required for update)",
-      },
+      commentId: { type: "string", description: "The comment ID" },
+      text: { type: "string", description: "New comment text (required for update)" },
     },
     required: ["action", "commentId"],
   },
@@ -202,93 +280,18 @@ export const manageCommentTool = {
     action: "update" | "delete";
     commentId: string;
     text?: string;
-  }) => {
-    try {
-      switch (params.action) {
-        case "update": {
-          if (!params.text) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "Error: text is required for update action",
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          const written = await verifiedWrite({
-            write: () =>
-              updateComment({
-                commentId: params.commentId,
-                text: params.text!,
-              }),
-            reread: (comment) => getCommentsForCard({ cardId: comment.cardId }),
-            landed: (comments) =>
-              comments.some(
-                (c) => c.id === params.commentId && c.text === params.text
-              ),
-          });
-
-          return writeResult(
-            {
-              cardId: written.result.cardId,
-              comment: {
-                id: written.result.id,
-                text: written.result.text,
-                updatedAt: written.result.updatedAt,
-              },
-            },
-            written
-          );
-        }
-        case "delete": {
-          const deleted = await verifiedDelete({
-            del: () => deleteComment({ commentId: params.commentId }),
-            confirmGone: async (comment) => {
-              if (!comment) return null;
-              const after = await getCommentsForCard({
-                cardId: comment.cardId,
-              });
-              return !after.some((c) => c.id === params.commentId);
-            },
-            unknownReason:
-              "Planka did not echo the deleted comment, so its card is unknown and the delete could not be confirmed",
-          });
-
-          return writeResult(
-            {
-              commentId: params.commentId,
-              ...(deleted.result ? { cardId: deleted.result.cardId } : {}),
-              message: deleted.verified
-                ? `Comment ${params.commentId} deleted`
-                : `Comment ${params.commentId} delete not confirmed`,
-            },
-            deleted
-          );
-        }
-        default:
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Error: Unknown action '${params.action}'`,
-              },
-            ],
-            isError: true,
-          };
-      }
-    } catch (error) {
-      if (error instanceof PlankaError) {
-        return {
-          content: [{ type: "text" as const, text: `Error: ${error.message}` }],
-          isError: true,
-        };
-      }
-      throw error;
-    }
-  },
+  }) =>
+    dispatchAction("planka_manage_comment", params, {
+      update: updateCommentTool,
+      delete: deleteCommentTool,
+    }),
 };
 
-export const commentTools = [addCommentTool, getCommentsTool, manageCommentTool];
+export const commentTools = [
+  createCommentTool,
+  getCommentsTool,
+  updateCommentTool,
+  deleteCommentTool,
+  addCommentTool,
+  manageCommentTool,
+];
