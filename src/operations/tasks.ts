@@ -24,7 +24,7 @@ import {
   UpdateTaskParamsInput,
 } from "../schemas/requests.js";
 import { TaskResponse, TaskListResponse } from "../schemas/responses.js";
-import { getCard } from "./cards.js";
+import { getCardLight } from "./cards.js";
 
 const DEFAULT_TASK_LIST_NAME = "Tasks";
 
@@ -38,7 +38,7 @@ async function getOrCreateDefaultTaskList(
   const { cardId } = input;
 
   // Fetch card to see existing task-lists
-  const cardDetails = await getCard({ cardId });
+  const cardDetails = await getCardLight({ cardId });
 
   // Check if there's an existing task-list
   if (cardDetails.taskLists && cardDetails.taskLists.length > 0) {
@@ -156,9 +156,11 @@ export async function updateTask(
 /**
  * Delete a task.
  */
-export async function deleteTask(input: TaskIdInput): Promise<void> {
+export async function deleteTask(input: TaskIdInput): Promise<Task | null> {
   const { taskId } = parseInput(TaskIdSchema, input);
-  await plankaClient.delete(`/api/tasks/${taskId}`);
+  const body = await plankaClient.delete(`/api/tasks/${taskId}`);
+  const parsed = TaskResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }
 
 /**

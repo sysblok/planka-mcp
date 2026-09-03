@@ -61,9 +61,11 @@ export async function updateComment(
 /**
  * Delete a comment.
  */
-export async function deleteComment(input: CommentIdInput): Promise<void> {
+export async function deleteComment(input: CommentIdInput): Promise<Comment | null> {
   const { commentId } = parseInput(CommentIdSchema, input);
-  await plankaClient.delete(`/api/comments/${commentId}`);
+  const body = await plankaClient.delete(`/api/comments/${commentId}`);
+  const parsed = CommentResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }
 
 /**

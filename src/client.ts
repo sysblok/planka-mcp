@@ -371,9 +371,14 @@ export class PlankaClient {
 
   /**
    * DELETE request.
+   *
+   * Returns the response body: Planka 2.x answers a delete with `{item}` of
+   * what it removed, and that item carries the parent id (cardId, boardId…)
+   * the caller needs to re-read the parent and prove the delete landed.
+   * Discarding it made every delete a blind `success: true`.
    */
-  async delete(path: string): Promise<void> {
-    return this.request<void>("DELETE", path);
+  async delete<T = unknown>(path: string): Promise<T> {
+    return this.request<T>("DELETE", path);
   }
 }
 

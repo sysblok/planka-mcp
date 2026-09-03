@@ -18,16 +18,22 @@ import { CardResponse, CardIncludedSchema } from "../schemas/responses.js";
 import { getCommentsForCard, CommentWithAuthor } from "./comments.js";
 
 /**
- * Card details with all related entities.
+ * Card details without comments (one GET, no comment traffic).
  */
-export interface CardDetails {
+export interface CardLightDetails {
   card: Card;
   taskLists: TaskList[];
   tasks: Task[];
-  comments: CommentWithAuthor[];
   labels: Label[];
   cardLabels: CardLabel[];
   attachments: Attachment[];
+}
+
+/**
+ * Card details with all related entities.
+ */
+export interface CardDetails extends CardLightDetails {
+  comments: CommentWithAuthor[];
 }
 
 /**
@@ -52,18 +58,15 @@ export async function createCard(input: CreateCardInput): Promise<Card> {
 }
 
 /**
- * Get a card by ID with all related entities.
+ * Get a card WITHOUT its comments — one GET, no comment traffic.
+ *
+ * This is the read used for write verification and by setCardLabels: pulling
+ * every comment of a card just to compare label ids was pure waste.
  */
-export async function getCard(input: CardIdInput): Promise<CardDetails> {
+export async function getCardLight(input: CardIdInput): Promise<CardLightDetails> {
   const { cardId } = parseInput(CardIdSchema, input);
 
-  // PLANKA 2.x doesn't include comments in the card response; fetch them
-  // from their own endpoint alongside. Fall back to `included` (pre-2.x)
-  // if that endpoint fails.
-  const [response, fetchedComments] = await Promise.all([
-    plankaClient.get<unknown>(`/api/cards/${cardId}`),
-    getCommentsForCard({ cardId }).catch(() => null),
-  ]);
+  const response = await plankaClient.get<unknown>(`/api/cards/${cardId}`);
   const parsed = CardResponse.parse(response);
   const included = CardIncludedSchema.parse(
     (response as Record<string, unknown>).included || {}
@@ -73,15 +76,30 @@ export async function getCard(input: CardIdInput): Promise<CardDetails> {
     card: parsed.item,
     taskLists: (included.taskLists || []).sort((a, b) => a.position - b.position),
     tasks: (included.tasks || []).sort((a, b) => a.position - b.position),
-    comments:
-      fetchedComments ??
-      (included.comments || []).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      ),
     labels: included.labels || [],
     cardLabels: included.cardLabels || [],
     attachments: included.attachments || [],
   };
+}
+
+/**
+ * Get a card by ID with all related entities, comments included.
+ *
+ * PLANKA 2.x never carries comments in the card response, so they come from
+ * their own endpoint. A failure there PROPAGATES on purpose: swallowing it
+ * into `comments: []` told the agent "this card has no comments" when the
+ * truth was "I could not read them" — the single most expensive lie this
+ * server can tell on a board whose memory lives in the comments.
+ */
+export async function getCard(input: CardIdInput): Promise<CardDetails> {
+  const { cardId } = parseInput(CardIdSchema, input);
+
+  const [light, comments] = await Promise.all([
+    getCardLight({ cardId }),
+    getCommentsForCard({ cardId }),
+  ]);
+
+  return { ...light, comments };
 }
 
 /**
@@ -126,9 +144,11 @@ export async function moveCard(input: MoveCardInput): Promise<Card> {
 }
 
 /**
- * Delete a card.
+ * Delete a card. Returns the deleted card when Planka echoes it (2.x does).
  */
-export async function deleteCard(input: CardIdInput): Promise<void> {
+export async function deleteCard(input: CardIdInput): Promise<Card | null> {
   const { cardId } = parseInput(CardIdSchema, input);
-  await plankaClient.delete(`/api/cards/${cardId}`);
+  const body = await plankaClient.delete(`/api/cards/${cardId}`);
+  const parsed = CardResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }

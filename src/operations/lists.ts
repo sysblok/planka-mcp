@@ -56,7 +56,9 @@ export async function updateList(
 /**
  * Delete a list.
  */
-export async function deleteList(input: ListIdInput): Promise<void> {
+export async function deleteList(input: ListIdInput): Promise<List | null> {
   const { listId } = parseInput(ListIdSchema, input);
-  await plankaClient.delete(`/api/lists/${listId}`);
+  const body = await plankaClient.delete(`/api/lists/${listId}`);
+  const parsed = ListResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }
