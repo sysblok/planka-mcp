@@ -1,0 +1,16 @@
+{
+  "mcp_servers": {
+    "planka": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@omnicoreos/planka-mcp@0.2.0"
+      ],
+      "env": {
+        "PLANKA_BASE_URL": "${PLANKA_BASE_URL}",
+        "PLANKA_API_KEY": "${PLANKA_API_KEY}",
+        "PLANKA_DEFAULT_BOARD_ID": "${PLANKA_DEFAULT_BOARD_ID}"
+      }
+    }
+  }
+}

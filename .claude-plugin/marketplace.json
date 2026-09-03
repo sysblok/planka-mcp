@@ -1,0 +1,26 @@
+{
+  "name": "planka-mcp",
+  "description": "The planka-mcp repository as its own Claude Code marketplace.",
+  "owner": {
+    "name": "planka-mcp contributors",
+    "url": "https://github.com/omnicoreos/planka-mcp"
+  },
+  "plugins": [
+    {
+      "name": "planka",
+      "source": "./",
+      "description": "Planka 2.x kanban over MCP, with the optional board workflow as skills.",
+      "version": "0.2.0",
+      "displayName": "Planka",
+      "homepage": "https://github.com/omnicoreos/planka-mcp#readme",
+      "repository": "https://github.com/omnicoreos/planka-mcp",
+      "license": "MIT",
+      "category": "Productivity",
+      "keywords": [
+        "planka",
+        "kanban",
+        "mcp"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 ---
 name: planka-orchestrator
 description: This skill should be used when the user asks to "orchestrate the Planka board", "run cards in parallel", "act as the director", "dispatch workers from Planka", or "continue the board workflow". It coordinates cards, comments, worktrees, worker ownership, evidence, and safe merges without editing repository files in the director role.
-version: 0.1.0
+license: MIT
+metadata:
+  version: 0.2.0
 ---
 
 # Planka workflow orchestrator
@@ -29,13 +31,37 @@ The director may:
 
 1. Read the repository's agent instructions and workflow documentation.
 2. Check the base tree and current worktrees without changing them.
-3. Read the full board.
-4. For every candidate card, read the description and all comments in order.
-5. Confirm the card has acceptance criteria and one behavior label.
-6. Resolve `serial` and `zone:*` exclusions before creating anything.
+3. Open the board with `planka_board_summary`: one call returns every column with
+   its card count and every label with its ID. It is the only opening read.
+4. If you are resuming work you did not start, or the session was compacted, call
+   `planka_board_activity` before anything else: it says what moved, and who moved
+   it, since a given date. Planka logs card creation, moves, member changes and
+   task completion only — comments and edits leave no trace there, so activity
+   narrows where to look, it does not replace reading the cards.
+5. Pull the candidate column with `planka_find_cards` and its `listId`: that reads
+   one whole column in a single request, with nothing clipped.
+6. For every candidate card, read the description and ALL comments in order:
+   `planka_get_card` returns a digest and no comments unless you pass
+   `withComments`, and `planka_get_comments` pages 50 at a time. Trust `hasMore`
+   and `nextBeforeId`, never the count you see in one answer.
+7. Confirm the card has acceptance criteria and one behavior label.
+8. Resolve `serial` and `zone:*` exclusions before creating anything.
 
 Never trust a suspicious zero-comment result blindly. If the card's state implies a
-decision or prior work, use `planka_get_comments` and report an MCP/API mismatch.
+decision or prior work, re-read with `planka_get_comments` and report an MCP/API
+mismatch.
+
+Reads are digests by design: descriptions are off unless asked, results are capped,
+and every scoped read reports `total` / `returned` / `hasMore`. A clipped answer is
+never a complete one. `planka_get_board`, `planka_list_lists` and `planka_list_cards`
+are deprecated aliases kept for compatibility — `board_summary` and `find_cards`
+replace all three, and `get_board` in particular costs orders of magnitude more.
+
+IDs are strings of digits and are never guessed. They come from
+`planka_board_summary` or `planka_get_structure`, and they all look alike: passing a
+label ID where a list ID belongs answers "Resource not found", not a type error.
+Planka also answers 404 where it means 403, so a "not found" on a write with an ID
+that read fine a moment ago is almost always a missing permission for the agent user.
 
 ## Selection
 
@@ -87,7 +113,10 @@ Audit, do not recreate, the worker's evidence:
 - confirm the acceptance step matches the card;
 - inspect visual evidence when the behavior is visual;
 - confirm the closing comment states omissions and remaining risk honestly;
-- confirm the worker changed only its assigned scope.
+- confirm the worker changed only its assigned scope;
+- confirm every board write you made reports `verified` (and `finalLabelIds` where
+  labels were touched). Writes re-read what they touched and report what actually
+  landed: trust that field, not the arguments you sent.
 
 If evidence is incomplete, leave a concrete comment and continue the same worker with
 one targeted request. Do not mark a theory as a verified result.

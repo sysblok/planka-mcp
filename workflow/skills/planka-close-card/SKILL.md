@@ -1,7 +1,9 @@
 ---
 name: planka-close-card
 description: This skill should be used when the user asks to "close this Planka card", "ship this card", "finish the card", "record the card handoff", or confirms "tested ok" for a workflow card. It verifies evidence, records a durable closing comment, and performs only the merge or board transition owned by the current role.
-version: 0.1.0
+license: MIT
+metadata:
+  version: 0.2.0
 ---
 
 # Close a Planka workflow card
@@ -11,16 +13,27 @@ because implementation stopped.
 
 ## Read first
 
-1. Read the card description and every comment.
-2. Read the repository's contribution and verification instructions.
-3. Resolve the `<!-- agent-work -->` branch and worktree against real Git state.
-4. Determine your role:
+1. Read the card description and every comment: `planka_get_card` with
+   `withComments`, or `planka_get_comments`. `get_card` is a digest and returns no
+   comments unless asked, and comments page 50 at a time — keep paging while
+   `hasMore` is true instead of trusting one answer. The description says how the
+   card was born; the comments say where it stands today, and the last one wins.
+2. If you are picking up a card someone else worked on, run `planka_board_activity`
+   or `planka_card_history` first: they say what moved and who moved it.
+3. Read the repository's contribution and verification instructions.
+4. Resolve the `<!-- agent-work -->` branch and worktree against real Git state.
+5. Determine your role:
    - worker: edits, verifies, commits, and writes the handoff;
    - director: audits, merges, cleans, and changes board state;
    - human confirmation handler: records `tested-ok` and completes the final move.
 
 Do not perform another role's transition unless the user explicitly assigned both
 roles and the repository allows it.
+
+Every board write you make (`planka_add_comment`, `planka_move_card`,
+`planka_set_card_labels`, `planka_update_card`) re-reads what it touched and reports
+`verified`. Read that field before claiming the card moved or the comment landed: a
+response without it confirmed nothing.
 
 ## Worker closure
 

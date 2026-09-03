@@ -1,0 +1,27 @@
+{
+  "name": "planka",
+  "version": "0.2.0",
+  "description": "Planka 2.x kanban over MCP: digest-first reads, verified writes, and the optional board workflow as skills.",
+  "author": {
+    "name": "planka-mcp contributors",
+    "url": "https://github.com/omnicoreos/planka-mcp"
+  },
+  "homepage": "https://github.com/omnicoreos/planka-mcp#readme",
+  "repository": "https://github.com/omnicoreos/planka-mcp",
+  "license": "MIT",
+  "keywords": [
+    "planka",
+    "kanban",
+    "mcp"
+  ],
+  "skills": "./workflow/skills/",
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "Planka",
+    "shortDescription": "Planka kanban boards over MCP",
+    "longDescription": "Reads a Planka 2.x board as digests instead of dumps, re-reads every write to report what actually landed, and ships the optional director/worker board workflow as skills.",
+    "developerName": "planka-mcp contributors",
+    "category": "Productivity",
+    "websiteURL": "https://github.com/omnicoreos/planka-mcp"
+  }
+}
