@@ -10,6 +10,12 @@ import { listTools } from "./lists.js";
 import { attachmentTools } from "./attachments.js";
 import { queryTools } from "./queries.js";
 import { toolPresentation } from "./annotations.js";
+import {
+  AccessPolicy,
+  getPolicy,
+  isToolVisible,
+  toolBlockedReason,
+} from "../config/policy.js";
 
 /**
  * All registered tools.
@@ -51,10 +57,38 @@ export interface Tool {
 }
 
 /**
- * Get a tool by name.
+ * A tool the policy switched off, kept callable so the refusal can explain
+ * itself. Hiding it from tools/list is not enough: a model working from a
+ * cached list, or from a skill that names the tool, would otherwise get a
+ * generic "unknown tool" and keep trying.
  */
-export function getTool(name: string): Tool | undefined {
-  return allTools.find((tool) => tool.name === name) as Tool | undefined;
+function blockedTool(name: string, reason: string): Tool {
+  return {
+    name,
+    description: reason,
+    inputSchema: { type: "object", properties: {} },
+    handler: async () => ({
+      content: [{ type: "text" as const, text: reason }],
+      isError: true,
+    }),
+  };
+}
+
+/**
+ * Get a tool by name.
+ *
+ * Returns a refusing stub for tools disabled by PLANKA_READ_ONLY or
+ * PLANKA_DISABLED_TOOLS, and undefined only for names that do not exist.
+ */
+export function getTool(
+  name: string,
+  policy: AccessPolicy = getPolicy()
+): Tool | undefined {
+  const tool = allTools.find((t) => t.name === name) as Tool | undefined;
+  if (!tool) return undefined;
+
+  const reason = toolBlockedReason(tool.name, policy);
+  return reason ? blockedTool(tool.name, reason) : tool;
 }
 
 /**
@@ -74,22 +108,62 @@ export function findMissingRequiredArgs(tool: Tool, args: unknown): string[] {
 }
 
 /**
- * Get all tool definitions (for MCP listTools).
+ * With a default board configured, `boardId` stops being mandatory.
+ *
+ * Done here rather than in each tool file so the individual schemas stay
+ * declarative: the tools describe Planka, this describes the deployment.
+ * Never mutates the registry — the returned schema is a copy.
  */
-export function getToolDefinitions() {
-  return allTools.map((tool) => {
-    // Annotations live in their own map; forgetting to spread them here is how
-    // they get silently dropped from tools/list.
-    const presentation = toolPresentation[tool.name];
-    return {
-      name: tool.name,
-      ...(presentation ? { title: presentation.title } : {}),
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      ...(presentation ? { annotations: presentation.annotations } : {}),
-      ...(presentation?._meta ? { _meta: presentation._meta } : {}),
-    };
-  });
+function applyDefaultBoard(
+  inputSchema: Tool["inputSchema"],
+  defaultBoardId: string
+): Tool["inputSchema"] {
+  const property = inputSchema.properties.boardId as
+    | Record<string, unknown>
+    | undefined;
+  if (!property) return inputSchema;
+
+  const description =
+    typeof property.description === "string" ? property.description : "";
+  const note = `boardId defaults to PLANKA_DEFAULT_BOARD_ID (${defaultBoardId}) when omitted.`;
+
+  return {
+    ...inputSchema,
+    properties: {
+      ...inputSchema.properties,
+      boardId: {
+        ...property,
+        description: description ? `${description} ${note}` : note,
+      },
+    },
+    ...(inputSchema.required
+      ? { required: inputSchema.required.filter((field) => field !== "boardId") }
+      : {}),
+  };
+}
+
+/**
+ * Get all tool definitions (for MCP listTools), after the access policy:
+ * read-only and disabled tools are not advertised at all.
+ */
+export function getToolDefinitions(policy: AccessPolicy = getPolicy()) {
+  return allTools
+    .filter((tool) => isToolVisible(tool.name, policy))
+    .map((tool) => {
+      // Annotations live in their own map; forgetting to spread them here is how
+      // they get silently dropped from tools/list.
+      const presentation = toolPresentation[tool.name];
+      return {
+        name: tool.name,
+        ...(presentation ? { title: presentation.title } : {}),
+        description: tool.description,
+        inputSchema: policy.defaultBoardId
+          ? applyDefaultBoard(tool.inputSchema, policy.defaultBoardId)
+          : tool.inputSchema,
+        ...(presentation ? { annotations: presentation.annotations } : {}),
+        ...(presentation?._meta ? { _meta: presentation._meta } : {}),
+      };
+    });
 }
 
 // Re-export individual tool groups

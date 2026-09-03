@@ -100,6 +100,128 @@ Show me my Planka projects and boards. In the Pending list, create a card named
 If Claude cannot see the tools, restart first and then follow
 [Troubleshooting](docs/troubleshooting.md).
 
+## Authentication
+
+Two ways to authenticate, and they are mutually exclusive: setting both is a
+configuration error, because Planka reads `Authorization` first and silently
+ignores `x-api-key` when both arrive.
+
+| | `PLANKA_API_KEY` (recommended) | `PLANKA_AGENT_EMAIL` + `PLANKA_AGENT_PASSWORD` |
+|---|---|---|
+| Sent as | `X-Api-Key: <prefix>_<secret>` on every request | `POST /api/access-tokens`, then `Authorization: Bearer` |
+| Login round-trip | none | one per session, refreshed every 25 minutes |
+| Sign-in rate limit | not subject to it | 10 logins per identity per 60 s — reached fast when several agents start at once |
+| Password on disk | none | yes, in the client's configuration file |
+| Attachment downloads | works | works |
+
+### Recipe: a scoped agent user with an API key
+
+Four steps, run by a Planka **admin**. The result is a user that can only ever
+see the boards you name — enforced by Planka itself, not by this server.
+
+1. **Create the user with the lowest global role.** In the Planka UI:
+   *Administration → Users → Add user*, role **`boardUser`**. A `boardUser`
+   cannot create projects and cannot grant itself memberships.
+
+2. **Give it membership on the boards it should work on**, and only those:
+
+   ```bash
+   curl -X POST "$PLANKA_URL/api/boards/<BOARD_ID>/board-memberships" \
+     -H "Authorization: Bearer $ADMIN_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"userId":"<USER_ID>","role":"editor"}'
+   ```
+
+   Use `"role":"viewer"` for an agent that should read and comment but never
+   create or move cards. `GET /api/projects` then returns only the projects
+   derived from these memberships; every other board answers 404.
+
+3. **Issue the API key** (admin-only endpoint). The key is shown **once**, in
+   `included.apiKey`; Planka stores only its hash and prefix:
+
+   ```bash
+   curl -X POST "$PLANKA_URL/api/users/<USER_ID>/api-key" \
+     -H "Authorization: Bearer $ADMIN_TOKEN"
+   ```
+
+4. **Configure the server with the key and nothing else.** Remove
+   `PLANKA_AGENT_EMAIL` and `PLANKA_AGENT_PASSWORD`:
+
+   ```json
+   {
+     "mcpServers": {
+       "planka": {
+         "command": "npx",
+         "args": ["-y", "@omnicoreos/planka-mcp"],
+         "env": {
+           "PLANKA_BASE_URL": "https://planka.example.com",
+           "PLANKA_API_KEY": "abcd1234_0123456789abcdef0123456789abcdef"
+         }
+       }
+     }
+   }
+   ```
+
+Rotating a key is step 3 again: issuing a new one invalidates the old.
+
+## Scoping the server
+
+An API key inherits its user's permissions — it carries no scopes of its own.
+Scoping therefore happens in three layers, and each covers something the others
+cannot.
+
+```
+Layer 1 · PLANKA          the only layer an agent cannot talk its way around
+  boardUser + board memberships + the API key above
+  ⇒ everything outside the allowed boards is 404/403 at the API
+
+Layer 2 · THIS SERVER     ergonomics, and defence against the agent itself
+  the environment variables below; they travel with the package,
+  so Claude Code, Codex and Cursor all get the same rules
+
+Layer 3 · THE CLIENT      survives a downgrade of this package
+  .claude/settings.json deny/ask rules, Codex enabled_tools/disabled_tools
+```
+
+Layer 1 has real enforcement but cannot express "do not call `planka_get_board`,
+it costs forty times more context". Layer 2 can, and reaches every runtime.
+Layer 3 stays true even if this package is pinned back to an older version.
+
+### Layer 2: the environment variables
+
+| Variable | Value | What it does |
+|---|---|---|
+| `PLANKA_DEFAULT_BOARD_ID` | one board id | `boardId` becomes optional on every tool that takes one, and defaults to this board. Saves the `planka_get_structure` call an agent makes only to recover an id that never changes |
+| `PLANKA_ALLOWED_BOARD_IDS` | comma-separated board ids | Boards outside the list are filtered out of `planka_get_structure`, and any call naming one is refused before the request leaves the process |
+| `PLANKA_ALLOWED_PROJECT_IDS` | comma-separated project ids | Same, one level up |
+| `PLANKA_READ_ONLY` | `true` or `1` | The fourteen write tools disappear from `tools/list` and are refused if called anyway |
+| `PLANKA_DISABLED_TOOLS` | comma-separated tool names | Switches individual tools off. The `planka_` prefix is optional: `get_board` and `planka_get_board` mean the same thing |
+| `PLANKA_PROTECTED_LIST_IDS` | comma-separated list ids | Refuses creating or moving cards **into** those lists, and editing or deleting the lists themselves |
+
+**Allowlists are by id, never by name.** Any board editor can rename a board, so
+a name-based allowlist is bypassed with one edit. Planka ids are stable.
+
+Two notes on what these are and are not:
+
+- `PLANKA_READ_ONLY` hides tools; it does not make the account read-only. Pair it
+  with `"role":"viewer"` in step 2 above if that is what you actually need.
+- `PLANKA_PROTECTED_LIST_IDS` is a guard-rail, not a permission: Planka has no
+  per-list rights. It is the right tool for "do not move cards to *Merged* on
+  your own", and the wrong one for anything security-critical.
+
+Example — an agent that reads one board and comments, and nothing else:
+
+```json
+"env": {
+  "PLANKA_BASE_URL": "https://planka.example.com",
+  "PLANKA_API_KEY": "abcd1234_0123456789abcdef0123456789abcdef",
+  "PLANKA_DEFAULT_BOARD_ID": "1234567890123456789",
+  "PLANKA_ALLOWED_BOARD_IDS": "1234567890123456789",
+  "PLANKA_DISABLED_TOOLS": "get_board",
+  "PLANKA_PROTECTED_LIST_IDS": "9876543210987654321"
+}
+```
+
 ## The 24 tools
 
 IDs are strings. Start with `planka_get_structure`, then use IDs returned by

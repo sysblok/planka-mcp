@@ -4,6 +4,7 @@
 import { plankaClient } from "../client.js";
 import { withBoardId } from "./board-id.js";
 import { parseInput } from "../errors.js";
+import { assertListWritable } from "../config/policy.js";
 import { List } from "../schemas/entities.js";
 import { ListResponse } from "../schemas/responses.js";
 import {
@@ -43,6 +44,7 @@ export async function updateList(
   input: UpdateListParamsInput
 ): Promise<List> {
   const { listId, ...updates } = parseInput(UpdateListParamsSchema, input);
+  assertListWritable(listId, undefined, "edit");
 
   const response = await plankaClient.patch<unknown>(
     `/api/lists/${listId}`,
@@ -58,6 +60,7 @@ export async function updateList(
  */
 export async function deleteList(input: ListIdInput): Promise<List | null> {
   const { listId } = parseInput(ListIdSchema, input);
+  assertListWritable(listId, undefined, "delete");
   const body = await plankaClient.delete(`/api/lists/${listId}`);
   const parsed = ListResponse.safeParse(body);
   return parsed.success ? parsed.data.item : null;

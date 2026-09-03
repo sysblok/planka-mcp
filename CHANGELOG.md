@@ -92,6 +92,44 @@ All notable changes to this project are documented here.
   annotations entry (a new tool without one fails the suite), the tools marked
   as needing confirmation must carry the `_meta` flag, the instructions must fit
   their budget, and `tools/list` must return a fixed, snapshotted tool order.
+- **API key authentication.** `PLANKA_API_KEY` sends `X-Api-Key` on every
+  request — JSON calls, multipart uploads and binary attachment downloads alike
+  — with no login round-trip and no token refresh. It also sidesteps Planka's
+  sign-in rate limit of ten logins per identity per minute, which several agents
+  starting at once will otherwise hit. Configuration is now API key XOR
+  email/password: setting both is refused rather than guessed, because Planka
+  reads `Authorization` first and silently ignores `x-api-key` when both arrive.
+- **Access policy driven by environment variables**, in `src/config/policy.ts`:
+  `PLANKA_DEFAULT_BOARD_ID`, `PLANKA_ALLOWED_BOARD_IDS`,
+  `PLANKA_ALLOWED_PROJECT_IDS`, `PLANKA_READ_ONLY`, `PLANKA_DISABLED_TOOLS` and
+  `PLANKA_PROTECTED_LIST_IDS`. Allowlists are by id, never by name: a name is one
+  edit away from being someone else's.
+- **`boardId` is now optional** on every tool that takes one, whenever
+  `PLANKA_DEFAULT_BOARD_ID` is configured. It is removed from the tool's
+  `required` list and the description says where the default comes from, so an
+  agent stops calling `planka_get_structure` just to recover an id that never
+  changes.
+- **`PLANKA_READ_ONLY` and `PLANKA_DISABLED_TOOLS` hide tools and refuse them.**
+  Hidden tools disappear from `tools/list`, and calling one anyway returns an
+  error that names the variable responsible and says not to retry — hiding alone
+  is not enough for a client working from a cached list.
+- **Allowlist filtering in `planka_get_structure`**, so an agent never sees the
+  boards and projects it may not touch, and a `projectId` that does not exist now
+  answers with the visible projects instead of an empty array.
+- `server.json`: the new environment variables, plus `title`, `websiteUrl` and
+  `icons` for the MCP Registry listing. `PLANKA_AGENT_EMAIL` and
+  `PLANKA_AGENT_PASSWORD` are no longer marked required.
+- README (English and Spanish): *Authentication* — including the four-step recipe
+  for a scoped `boardUser` with an API key — and *Scoping the server*, with the
+  three-layer model and the variable matrix. New entries in
+  `docs/troubleshooting.md` for every new error message.
+- Binary attachment downloads now retry once on a 401 with a fresh token, the way
+  every other request already did. Before, an expired token during a download
+  surfaced as a bare authentication failure.
+- A `200` carrying the SPA's HTML instead of JSON — what Planka answers for any
+  path it does not route, and what an `http://` base URL redirected to `https://`
+  ends up producing — is now reported as such on every request, not only during
+  login.
 
 ## [0.2.0] - 2026-08-24
 

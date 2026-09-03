@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlankaNotFoundError } from "../../src/errors.js";
+import { resetPolicyCache } from "../../src/config/policy.js";
 
 const mocks = vi.hoisted(() => ({ getProjects: vi.fn() }));
 
@@ -71,5 +72,49 @@ describe("withBoardId", () => {
       })
     ).rejects.toThrow("connection reset");
     expect(mocks.getProjects).not.toHaveBeenCalled();
+  });
+});
+
+describe("withBoardId under the access policy", () => {
+  beforeEach(() => {
+    mocks.getProjects.mockReset();
+    resetPolicyCache();
+    delete process.env.PLANKA_DEFAULT_BOARD_ID;
+    delete process.env.PLANKA_ALLOWED_BOARD_IDS;
+  });
+
+  afterEach(() => {
+    delete process.env.PLANKA_DEFAULT_BOARD_ID;
+    delete process.env.PLANKA_ALLOWED_BOARD_IDS;
+    resetPolicyCache();
+  });
+
+  it("fills in PLANKA_DEFAULT_BOARD_ID when no boardId arrives", async () => {
+    process.env.PLANKA_DEFAULT_BOARD_ID = "board-default";
+    resetPolicyCache();
+
+    const run = vi.fn(async (id: string) => `board:${id}`);
+    await expect(withBoardId(undefined, run)).resolves.toBe(
+      "board:board-default"
+    );
+  });
+
+  it("rejects a board outside the allowlist before any request", async () => {
+    process.env.PLANKA_ALLOWED_BOARD_IDS = "board-1";
+    resetPolicyCache();
+
+    const run = vi.fn(async (id: string) => `board:${id}`);
+    await expect(withBoardId("board-9", run)).rejects.toThrow(
+      "boardId board-9 is not in PLANKA_ALLOWED_BOARD_IDS (allowed: board-1)"
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("asks for a boardId when there is neither an argument nor a default", async () => {
+    const run = vi.fn(async (id: string) => `board:${id}`);
+    await expect(withBoardId(undefined, run)).rejects.toThrow(
+      /PLANKA_DEFAULT_BOARD_ID is not set/
+    );
+    expect(run).not.toHaveBeenCalled();
   });
 });

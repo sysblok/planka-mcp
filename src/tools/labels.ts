@@ -17,6 +17,7 @@ import {
   writeResult,
 } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
+import { getPolicy } from "../config/policy.js";
 
 /**
  * The 43 Planka colors as a real JSON Schema enum instead of a sentence in the
@@ -74,12 +75,13 @@ export const manageLabelsTool = {
     try {
       switch (params.action) {
         case "create": {
-          if (!params.boardId) {
+          const boardId = params.boardId ?? getPolicy().defaultBoardId;
+          if (!boardId) {
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: "Error: boardId is required for create action",
+                  text: "Error: boardId is required for create action (or set PLANKA_DEFAULT_BOARD_ID)",
                 },
               ],
               isError: true,
@@ -125,7 +127,7 @@ export const manageLabelsTool = {
           const written = await verifiedWrite({
             write: () =>
               createLabel({
-                boardId: params.boardId!,
+                boardId,
                 name: params.name!,
                 color: colorParse.data,
               }),

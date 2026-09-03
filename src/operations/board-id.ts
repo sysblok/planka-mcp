@@ -11,6 +11,7 @@
  *   - an error saying "that is a projectId, and these are its boards".
  */
 import { PlankaError, PlankaNotFoundError } from "../errors.js";
+import { assertBoardAllowed, resolveBoardId } from "../config/policy.js";
 import { getProjects } from "./projects.js";
 
 /** A 404 can arrive as PlankaNotFoundError or as PlankaError with status 404. */
@@ -95,16 +96,20 @@ async function diagnoseBoardId(boardId: string): Promise<string> {
  * when the id turned out to be a single-board project.
  */
 export async function withBoardId<T>(
-  boardId: string,
+  boardId: string | undefined,
   run: (id: string) => Promise<T>
 ): Promise<T> {
+  // Default + allowlist first: nothing leaves the process for a board this
+  // server is not allowed to touch.
+  const id = resolveBoardId(boardId);
+
   try {
-    return await run(boardId);
+    return await run(id);
   } catch (error) {
     if (!isNotFound(error)) throw error;
 
     // diagnoseBoardId throws unless the resolution is unambiguous.
-    const resolved = await diagnoseBoardId(boardId);
-    return await run(resolved);
+    const resolved = await diagnoseBoardId(id);
+    return await run(assertBoardAllowed(resolved));
   }
 }
