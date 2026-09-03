@@ -4,6 +4,118 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-03
+
+### Highlights
+
+- **Every write is verified.** The server writes, re-reads the entity and
+  reports what the re-read says — never what was asked for. `success` mirrors
+  `verified` and nothing else: "I could not check" now answers `success: false`
+  with `isError` and names the parameter that would make the check possible.
+- **API key authentication and a real access policy.** `PLANKA_API_KEY` replaces
+  the login (no token refresh, no sign-in rate limit), and seven environment
+  variables scope what the server may see and touch: default board, board and
+  project allowlists, read-only mode, disabled tools, protected columns, hidden
+  deprecated tools.
+- **`instructions` and annotations on the handshake.** The shared guidance is
+  stated once instead of 41 times, every tool publishes a title and all four MCP
+  behaviour hints explicitly, and the eleven tools that lose data carry Claude
+  Code's `requiresUserInteraction` prompt.
+- **Reads return digests, and say what they clipped.** Descriptions are off
+  unless asked for, results are capped, and every scoped read reports
+  `total`/`returned`/`hasMore`/`nextOffset`, so a clipped answer is never
+  mistaken for a complete one. `planka_get_board` went 56 k → 17 k characters.
+- **Eight new tools**: `planka_board_summary`, `planka_find_cards`,
+  `planka_get_activity`, `planka_list_users`, `planka_set_card_members`,
+  `planka_duplicate_card`, `planka_archive_card`, `planka_move_list_cards`.
+- **The three `manage_*` tools are split into one tool per action** (32 → 41
+  tools) so `required` finally means something, with the old names kept as
+  deprecated aliases that route to the replacement — and that now inherit the
+  replacement's access policy.
+- **Ships as a Claude Code and Codex plugin**, with MCP resources and prompts,
+  a `planka-mcp init --client` installer, and a preflight hook.
+- **Breaking changes**: `success` is no longer `true` on an unverified write;
+  `planka_list_cards` and `planka_list_lists` are deprecated (still callable);
+  `withDescription` and `labelFilter` are still accepted but no longer announced
+  in `inputSchema`; `planka_find_cards` digests now carry `labelIds`;
+  `planka_get_card` returns `listName: null` plus `listNameUnavailable` instead
+  of omitting the field.
+
+### Fixed — adversarial review before release
+
+- **`PLANKA_DEFAULT_BOARD_ID` no longer breaks the tool the instructions tell
+  you to call first.** The runtime presence check validated against the raw
+  registry schema while `tools/list` advertised the policy-applied one, so
+  `planka_board_summary {}` was refused for a missing `boardId` the listing said
+  was optional — on the five tools that declare it (`board_summary`,
+  `list_lists`, `get_board`, `create_list`, `create_label`). Both sides now go
+  through `effectiveInputSchema(tool, policy)`.
+- **Deprecated aliases no longer bypass `PLANKA_DISABLED_TOOLS`.**
+  `planka_manage_lists {action:"delete"}` reached a disabled
+  `planka_delete_list`, and `planka_add_comment` a disabled
+  `planka_create_comment`. Both now consult the target's policy before
+  dispatching.
+- **No more `{"success":true,"verified":false,"message":"… not confirmed"}`.**
+  That was the default branch of `update_task` and `delete_task` without
+  `cardId`, of `delete_attachment` when Planka did not echo the card, and of the
+  deletes whose response body does not parse. Unverified writes answer
+  `success: false` + `isError` and say what to pass; `update_task` without
+  `cardId` also labels its fields as `taskFromWriteEcho`.
+- **The test guarding `WRITE_TOOL_NAMES` could not fail.** It compared a set
+  against its own complement. It now asserts, tool by tool, that membership
+  matches the `readOnlyHint` the tool advertises — the only net that stops the
+  next write tool from staying visible under `PLANKA_READ_ONLY=true`.
+- **`PLANKA_PROTECTED_LIST_IDS` protects the cards, not just the column.**
+  `move_card`, `archive_card` and `delete_card` refused to write *into* a
+  protected column but happily emptied it one card at a time. The origin column
+  is now checked too — with no extra read on deployments that set no protected
+  list.
+- **`planka_add_attachment` goes through `verifiedWrite`.** A failed re-read
+  used to return an error without the attachment id, and the natural retry
+  uploaded the file twice.
+- **Four hand-written `verified: true` are gone.** `set_card_labels` and
+  `set_card_members` report through `writeResult` with a flag derived from their
+  own re-read; the two "nothing to do" states say which read backs the claim.
+- **`planka_create_card` verifies what it wrote** (`name` and `listId`, not just
+  the id it re-read by), and a label that failed to attach comes back as
+  `{labelId, reason}` instead of a bare id — a 403 on the board and a wrong
+  labelId are otherwise indistinguishable.
+- **`planka_find_cards` digests carry `labelIds`**, so
+  `find_cards → set_card_labels` no longer needs a `planka_board_summary` in
+  between, and multi-column results carry `listId` next to `listName`.
+- **A 404 on the board keeps its diagnosis** when `/api/projects` is unreadable
+  too: the original error, with its hint, is re-thrown instead of replaced by a
+  bare "Board not found".
+- **`planka_create_list` and `planka_create_label` check the board allowlist
+  explicitly**, instead of relying on a lower layer to do it.
+- `planka_get_card` returns `listName: null` with `listNameUnavailable` when the
+  board could not be read; a 404 on `/api/users/me` no longer claims `me` should
+  be a `userId`; the HTML-instead-of-JSON error only blames an HTTP→HTTPS
+  redirect when the URL was `http://` or the request was actually redirected;
+  `planka_set_card_members` with names and no board says the problem was
+  resolving a **name**; the `planka://labels/colors` resource points at
+  `planka_create_label` / `planka_update_label` instead of the deprecated
+  `planka_manage_labels`.
+
+### Changed — `tools/list` cost
+
+- `planka_list_cards` and `planka_list_lists` joined `DEPRECATED_TOOL_NAMES`,
+  the 43-colour enum is announced once (on `planka_create_label`) instead of
+  three times, `withDescription` and `labelFilter` are no longer announced, and
+  the `boardId` description was cut. Measured over JSON-RPC against the built
+  server: `tools/list` **34 477 → 32 840** characters, and **29 821 → 26 034**
+  with `PLANKA_HIDE_DEPRECATED=true` (−22 % against the pre-release baseline).
+  Nothing lost capability: every trimmed parameter is still accepted.
+
+### Documentation
+
+- `server.json` declares all thirteen environment variables the code reads;
+  `PLANKA_MCP_PREFLIGHT` and `PLANKA_MCP_COMMAND` are documented in both READMEs;
+  `docs/tools.md` lists the eleven `requiresUserInteraction` tools, the complete
+  data-losing set, `position` on `planka_create_label`, and the shared digest
+  vocabulary; `scripts/sync-identity.mjs` now also stamps the two `SKILL.md`
+  versions, so `check:identity` catches them when they go stale.
+
 ### Added
 
 - **The three `manage_*` tools are split, one tool per action: 32 → 41.**
@@ -22,10 +134,11 @@ All notable changes to this project are documented here.
   the column.
 - `PLANKA_HIDE_DEPRECATED=true` drops the deprecated tools from `tools/list`:
   `planka_manage_labels`, `planka_manage_lists`, `planka_manage_comment`,
-  `planka_add_comment` and `planka_get_board`. Measured on `tools/list`:
-  **34 444 → 29 788 characters** (−4 656, −13.5 %). They remain callable, so a
-  model working from a cached list or from a skill that names one still gets the
-  real behaviour instead of "unknown tool". Default `false`.
+  `planka_add_comment`, `planka_get_board` and — added at the end of this
+  release — `planka_list_cards` and `planka_list_lists`. Measured on `tools/list`
+  at 0.3.0: **32 840 → 26 034 characters** (−6 806, −20.7 %). They remain
+  callable, so a model working from a cached list or from a skill that names one
+  still gets the real behaviour instead of "unknown tool". Default `false`.
 - 35 unit tests for the split (`tests/unit/split-manage.test.ts`): the happy path
   of each new tool against a mocked re-read, the `nothing to do` guard, a delete
   that did not delete, `required` enforcement per tool, every alias dispatching,
