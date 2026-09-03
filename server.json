@@ -17,12 +17,12 @@
     "url": "https://github.com/omnicoreos/planka-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@omnicoreos/planka-mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },
@@ -93,6 +93,27 @@
         {
           "name": "PLANKA_PROTECTED_LIST_IDS",
           "description": "Comma-separated list ids that must not receive cards nor be edited or deleted",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_HIDE_DEPRECATED",
+          "description": "Set to true to drop the deprecated tool aliases from tools/list. They stay callable",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_SUMMARY_HIGHLIGHT_LABEL",
+          "description": "Label planka_board_summary flags as unblocked/ready. Unset: no highlighting",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_SUMMARY_DECISION_LISTS",
+          "description": "Comma-separated columns planka_board_summary returns cards from when the call does not say",
           "isRequired": false,
           "format": "string",
           "isSecret": false

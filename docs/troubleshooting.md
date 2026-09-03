@@ -8,7 +8,7 @@ the fix.
 **Cause:** the old MCP reads `included.comments` from the card response. Planka 2.x
 does not populate it, so HTTP succeeds with zero items.
 
-**Fix:** make sure Claude Code runs this fork, restart Claude Code, and call
+**Fix:** make sure Claude Code runs planka-mcp, restart Claude Code, and call
 `planka_get_comments` again. Run the opt-in smoke test if the result is still
 suspicious; it compares MCP output to `GET /api/cards/:id/comments`.
 
@@ -16,7 +16,7 @@ suspicious; it compares MCP output to `GET /api/cards/:id/comments`.
 
 **Cause:** the old tool schema knows `addLabelIds` but silently drops `labelIds`.
 
-**Fix:** use this fork. It accepts both names and re-reads the card. Treat any result
+**Fix:** use planka-mcp. It accepts both names and re-reads the card. Treat any result
 with a non-empty `failed` array as an error.
 
 ## “Removing a label returns 404, or the label remains”
@@ -24,7 +24,7 @@ with a non-empty `failed` array as an error.
 **Cause:** Planka 2.x deletes by `labelId:<labelId>` criteria, not by the ID of the
 card-label junction record.
 
-**Fix:** upgrade to this fork and pass the board label ID in `removeLabelIds`:
+**Fix:** upgrade to planka-mcp and pass the board label ID in `removeLabelIds`:
 
 ```json
 {
@@ -38,7 +38,7 @@ card-label junction record.
 **Cause:** the old response schema has a closed color enum. One newer Planka color
 causes Zod to reject the entire board.
 
-**Fix:** use this fork. Read paths accept backend color strings. Write paths still
+**Fix:** use planka-mcp. Read paths accept backend color strings. Write paths still
 validate known colors.
 
 ## “My credential is expired,” but the password works in the browser
@@ -80,7 +80,7 @@ with a body containing `userId` and `role: "editor"`.
 **Cause:** Planka 2.x requires `type` as well as `name` and `position`. Older MCP
 builds omit it.
 
-**Fix:** use this fork. `planka_create_list` sends `type: "active"` by default and
+**Fix:** use planka-mcp. `planka_create_list` sends `type: "active"` by default and
 also accepts `closed`.
 
 ## “The MCP tools do not appear in Claude Code”

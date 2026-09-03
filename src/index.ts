@@ -19,6 +19,7 @@ import {
   getToolDefinitions,
   getTool,
   allTools,
+  effectiveInputSchema,
   findMissingRequiredArgs,
 } from "./tools/index.js";
 import {
@@ -109,11 +110,10 @@ async function main() {
 
     // Presence check before entering the handler: a missing required field has
     // to name the tool and the field, not die somewhere inside.
+    const schema = effectiveInputSchema(tool);
     const missing = findMissingRequiredArgs(tool, args);
     if (missing.length > 0) {
-      return errorResult(
-        formatMissingArgsError(name, missing, args, tool.inputSchema)
-      );
+      return errorResult(formatMissingArgsError(name, missing, args, schema));
     }
 
     try {
@@ -122,7 +122,7 @@ async function main() {
     } catch (error) {
       // INPUT validation: name the tool, the field and what arrived.
       if (error instanceof PlankaInputError) {
-        return errorResult(formatInputError(name, error, tool.inputSchema));
+        return errorResult(formatInputError(name, error, schema));
       }
 
       // A loose ZodError means Planka's RESPONSE did not match the schema.

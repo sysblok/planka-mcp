@@ -11,7 +11,13 @@
  * survive as aliases that route `action` to the tool that replaced it, and the
  * presence check they used to do by hand is done here, once, from the target's
  * own schema.
+ *
+ * The alias also inherits the target's access policy: an alias that reached the
+ * handler directly was a way around `PLANKA_DISABLED_TOOLS`
+ * (`planka_manage_lists {action:"delete"}` running a disabled
+ * `planka_delete_list`), so the policy is consulted on the TARGET's name here.
  */
+import { toolBlockedReason } from "../config/policy.js";
 
 /** The slice of a tool this module needs. Avoids importing the registry. */
 export interface DispatchTarget {
@@ -80,6 +86,10 @@ export async function dispatchAction(
         `${aliasName} is deprecated — call ${target.name} instead, which declares this in its schema.`
     );
   }
+
+  // The alias must not be a bypass: the target's own policy decides.
+  const blocked = toolBlockedReason(target.name);
+  if (blocked) return toolError(blocked);
 
   return target.handler(params);
 }

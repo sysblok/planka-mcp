@@ -4,6 +4,7 @@
 import { setCardMembers } from "../operations/members.js";
 import { listUsers, resolveUserNames } from "../operations/users.js";
 import { PlankaError } from "../errors.js";
+import { writeResult } from "../operations/verify.js";
 
 /**
  * Tool: planka_set_card_members
@@ -86,7 +87,33 @@ export const setCardMembersTool = {
       const unresolved: Array<{ userId: string; reason: string }> = [];
 
       if (addNames.length > 0 || removeNames.length > 0) {
-        const roster = await listUsers({ boardId: params.boardId });
+        // Resolving a NAME is what needs the roster, and the roster may need a
+        // board. Say that, instead of letting a bare "boardId is required"
+        // surface from three layers down with no mention of the names.
+        let roster;
+        try {
+          roster = await listUsers({ boardId: params.boardId });
+        } catch (error) {
+          if (
+            error instanceof PlankaError &&
+            error.code === "MISSING_BOARD_ID"
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text:
+                    `Error: cannot resolve the user name(s) ${[...addNames, ...removeNames].join(", ")}: ` +
+                    "this account cannot read the instance roster, so the names have to be looked up on a board. " +
+                    "Pass boardId to this call (or set PLANKA_DEFAULT_BOARD_ID), or pass user IDs in add/remove — " +
+                    "planka_list_users with a boardId returns them.",
+                },
+              ],
+              isError: true as const,
+            };
+          }
+          throw error;
+        }
         const resolvedAdd = resolveUserNames(addNames, roster.users);
         const resolvedRemove = resolveUserNames(removeNames, roster.users);
         add.push(...resolvedAdd.ids);
@@ -114,29 +141,24 @@ export const setCardMembersTool = {
 
       const result = await setCardMembers({ cardId: params.cardId, add, remove });
       const failed = [...unresolved, ...result.failed];
+      // `failed` comes from setCardMembers' re-read of the card, so this IS
+      // the verification — no hand-written `verified: true`.
       const ok = failed.length === 0;
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              success: ok,
-              verified: true,
-              cardId: params.cardId,
-              membersAdded: result.added.length,
-              membersRemoved: result.removed.length,
-              added: result.added,
-              removed: result.removed,
-              alreadyPresent: result.alreadyPresent,
-              notPresent: result.notPresent,
-              failed,
-              finalMemberIds: result.finalMemberIds,
-            }),
-          },
-        ],
-        ...(ok ? {} : { isError: true as const }),
-      };
+      return writeResult(
+        {
+          cardId: params.cardId,
+          membersAdded: result.added.length,
+          membersRemoved: result.removed.length,
+          added: result.added,
+          removed: result.removed,
+          alreadyPresent: result.alreadyPresent,
+          notPresent: result.notPresent,
+          failed,
+          finalMemberIds: result.finalMemberIds,
+        },
+        { verified: ok }
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {

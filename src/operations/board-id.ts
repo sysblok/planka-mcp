@@ -32,16 +32,21 @@ function describe(id: string, name: string | null | undefined): string {
  * with exactly one board). In every other case it throws an actionable error
  * and never returns.
  */
-async function diagnoseBoardId(boardId: string): Promise<string> {
+async function diagnoseBoardId(
+  boardId: string,
+  original: unknown
+): Promise<string> {
   let projects;
   let boards;
 
   try {
     ({ projects, boards } = await getProjects());
   } catch {
-    // If we cannot even list projects, the original 404 is the best
-    // information available: let the caller re-throw it.
-    throw new PlankaNotFoundError("Board", boardId);
+    // If we cannot even list projects, the original 404 is the best information
+    // available — and it carries the hint that says which kind of id this path
+    // wanted and that Planka answers 404 where it means 403. Re-throw it
+    // instead of replacing it with a bare "Board not found".
+    throw original;
   }
 
   const asProject = projects.find((p) => p.id === boardId);
@@ -109,7 +114,7 @@ export async function withBoardId<T>(
     if (!isNotFound(error)) throw error;
 
     // diagnoseBoardId throws unless the resolution is unambiguous.
-    const resolved = await diagnoseBoardId(id);
+    const resolved = await diagnoseBoardId(id, error);
     return await run(assertBoardAllowed(resolved));
   }
 }

@@ -54,6 +54,28 @@ marketplace.plugins[0].version = packageJson.version;
 marketplace.plugins[0].homepage = `${identity.repositoryUrl}#readme`;
 marketplace.plugins[0].repository = identity.repositoryUrl;
 
+// The two skills the plugin installs carry their own `metadata.version`. They
+// are not JSON, so they get a targeted rewrite of that one line: left out of
+// this map they went stale on every release and `check:identity` never saw it.
+const skillFiles = [
+  "workflow/skills/planka-close-card/SKILL.md",
+  "workflow/skills/planka-orchestrator/SKILL.md",
+];
+
+const skillOutputs = await Promise.all(
+  skillFiles.map(async (name) => {
+    const current = await readFile(resolve(root, name), "utf8");
+    const updated = current.replace(
+      /^(\s*version:\s*).*$/m,
+      `$1${packageJson.version}`
+    );
+    if (updated === current && !current.includes(`version: ${packageJson.version}`)) {
+      throw new Error(`${name} has no metadata.version line to synchronize`);
+    }
+    return [name, updated];
+  })
+);
+
 const outputs = new Map([
   ["package.json", `${JSON.stringify(packageJson, null, 2)}\n`],
   ["server.json", `${JSON.stringify(serverJson, null, 2)}\n`],
@@ -63,6 +85,7 @@ const outputs = new Map([
   [".claude-plugin/plugin.json", `${JSON.stringify(claudePlugin, null, 2)}\n`],
   [".codex-plugin/plugin.json", `${JSON.stringify(codexPlugin, null, 2)}\n`],
   [".claude-plugin/marketplace.json", `${JSON.stringify(marketplace, null, 2)}\n`],
+  ...skillOutputs,
 ]);
 
 let stale = false;

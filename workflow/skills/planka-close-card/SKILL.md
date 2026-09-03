@@ -3,7 +3,7 @@ name: planka-close-card
 description: This skill should be used when the user asks to "close this Planka card", "ship this card", "finish the card", "record the card handoff", or confirms "tested ok" for a workflow card. It verifies evidence, records a durable closing comment, and performs only the merge or board transition owned by the current role.
 license: MIT
 metadata:
-  version: 0.2.0
+  version: 0.3.0
 ---
 
 # Close a Planka workflow card
@@ -30,7 +30,7 @@ because implementation stopped.
 Do not perform another role's transition unless the user explicitly assigned both
 roles and the repository allows it.
 
-Every board write you make (`planka_add_comment`, `planka_move_card`,
+Every board write you make (`planka_create_comment`, `planka_move_card`,
 `planka_set_card_labels`, `planka_update_card`) re-reads what it touched and reports
 `verified`. Read that field before claiming the card moved or the comment landed: a
 response without it confirmed nothing.

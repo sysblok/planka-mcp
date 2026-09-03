@@ -209,7 +209,12 @@ describe("create_card reports what landed", () => {
 
     const body = payload(result);
     expect(body.labelsAttached).toBe(0);
-    expect(body.partialFailure.labelIds).toEqual(["nope-1", "nope-2"]);
+    // Each failure carries its reason: a bad labelId and a 403 on the board
+    // are otherwise indistinguishable.
+    expect(body.partialFailure.labelIds).toEqual([
+      { labelId: "nope-1", reason: expect.stringContaining("not found") },
+      { labelId: "nope-2", reason: expect.stringContaining("not found") },
+    ]);
     expect(result.isError).toBe(true);
   });
 });
@@ -321,7 +326,30 @@ describe("a delete that did not delete is not a success", () => {
     const result = await deleteTaskTool.handler({ taskId: "task-1" });
     const body = payload(result);
 
+    // "I could not check" is NOT a success: the payload used to say
+    // success:true next to verified:false and "delete not confirmed".
+    expect(body.success).toBe(false);
     expect(body.verified).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(body.verificationUnavailable).toMatch(/cardId/);
+    expect(body.message).toMatch(/pass cardId/);
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("update_task without cardId does not claim success either", async () => {
+    mocks.patch.mockResolvedValue({ item: task("task-1", "renamed") });
+
+    const result = await updateTaskTool.handler({
+      taskId: "task-1",
+      name: "renamed",
+    });
+    const body = payload(result);
+
+    expect(body.success).toBe(false);
+    expect(body.verified).toBe(false);
+    expect(result.isError).toBe(true);
+    // The returned fields are Planka's echo of the PATCH, and say so.
+    expect(body.taskFromWriteEcho).toBe(true);
     expect(body.verificationUnavailable).toMatch(/cardId/);
     expect(mocks.get).not.toHaveBeenCalled();
   });

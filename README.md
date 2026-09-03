@@ -233,11 +233,13 @@ Layer 3 stays true even if this package is pinned back to an older version.
 | `PLANKA_ALLOWED_BOARD_IDS` | comma-separated board ids | Boards outside the list are filtered out of `planka_get_structure`, and any call naming one is refused before the request leaves the process |
 | `PLANKA_ALLOWED_PROJECT_IDS` | comma-separated project ids | Same, one level up |
 | `PLANKA_READ_ONLY` | `true` or `1` | The twenty-seven write tools disappear from `tools/list` and are refused if called anyway |
-| `PLANKA_HIDE_DEPRECATED` | `true` or `1` | Drops the five deprecated tools (`manage_labels`, `manage_lists`, `manage_comment`, `add_comment`, `get_board`) from `tools/list`, saving ~4.7 kB of context. They stay callable, so a cached tool list still works |
+| `PLANKA_HIDE_DEPRECATED` | `true` or `1` | Drops the seven deprecated tools (`manage_labels`, `manage_lists`, `manage_comment`, `add_comment`, `get_board`, `list_cards`, `list_lists`) from `tools/list`, saving ~6.8 kB of context. They stay callable, so a cached tool list still works |
 | `PLANKA_DISABLED_TOOLS` | comma-separated tool names | Switches individual tools off. The `planka_` prefix is optional: `get_board` and `planka_get_board` mean the same thing |
-| `PLANKA_PROTECTED_LIST_IDS` | comma-separated list ids | Refuses creating or moving cards **into** those lists, and editing or deleting the lists themselves |
+| `PLANKA_PROTECTED_LIST_IDS` | comma-separated list ids | Refuses creating or moving cards **into** those lists, editing or deleting the lists themselves, and moving, archiving or deleting the cards **out of** them |
 | `PLANKA_SUMMARY_DECISION_LISTS` | comma-separated column names or ids | Which columns `planka_board_summary` returns cards from when the call does not say. Unset: it returns no cards, only the shape of the board |
 | `PLANKA_SUMMARY_HIGHLIGHT_LABEL` | one label name | The label that marks a card as unblocked in `planka_board_summary`. Unset: nothing is highlighted |
+| `PLANKA_MCP_PREFLIGHT` | `full` | Read by the plugin's SessionStart hook only: also spawn the server binary and wait for its stdio banner. Off by default, because on a cold cache it costs an `npx` download |
+| `PLANKA_MCP_COMMAND` | a command | Read by the same hook: the command to spawn instead of `npx -y @omnicoreos/planka-mcp` (a local checkout, a pinned binary) |
 
 **The server ships with no board vocabulary of its own.** Column names and
 "ready" labels are yours, in your language: the last two variables are how a
@@ -284,8 +286,8 @@ Planka; do not guess them.
 | `planka_get_board` | **Deprecated.** Reads one board whole, up to `limit` cards |
 | `planka_board_summary` | One-call briefing: columns with counts, labels with ids, and optionally the cards of named columns |
 | `planka_find_cards` | The one read over cards: one column (`listId`), or a board searched by text, label or member |
-| `planka_list_lists` | Alias of `planka_board_summary` with `cardsFrom: []` |
-| `planka_list_cards` | Alias of `planka_find_cards` with `listId` |
+| `planka_list_lists` | **Deprecated.** Alias of `planka_board_summary` with `cardsFrom: []` |
+| `planka_list_cards` | **Deprecated.** Alias of `planka_find_cards` with `listId` |
 | `planka_create_card` | Creates a card and can attach tasks and labels |
 | `planka_get_card` | Card digest; `detail: "full"` and `withComments` on demand |
 | `planka_update_card` | Updates title, description, due date, or completion |
@@ -344,7 +346,7 @@ The `initialize` handshake returns a short set of server instructions — how to
 open a session, where IDs come from, why every comment on a card matters, and
 that Planka answers `404` where it means `403`. Claude Code puts them in the
 session system prompt and Codex CLI reads them alongside the tool list, so the
-shared guidance is stated once instead of repeated in 32 tool descriptions.
+shared guidance is stated once instead of repeated in 41 tool descriptions.
 Every tool also publishes a display title and all four MCP behavioural hints
 explicitly, rather than inheriting the spec's pessimistic defaults, plus the two
 `_meta` keys Claude Code acts on: a forced confirmation prompt on the tools that
@@ -368,7 +370,7 @@ are `@`-mentioned, in Cursor they come from the resource picker:
 | `planka://workflow/skills/orchestrator` | The director skill, verbatim |
 | `planka://workflow/skills/close-card` | The closing skill, verbatim |
 | `planka://gotchas/planka-2x` | How Planka 2.x actually behaves when a call answers nonsense |
-| `planka://labels/colors` | Every color `planka_manage_labels` accepts, generated from the schema |
+| `planka://labels/colors` | Every color `planka_create_label` and `planka_update_label` accept, generated from the schema |
 
 **Prompts** are three ways to start, surfaced by Claude Code as
 `/mcp__planka__<name>`:

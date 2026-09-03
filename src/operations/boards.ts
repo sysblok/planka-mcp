@@ -552,9 +552,17 @@ async function listBundle(
 export interface CardDigest {
   id: string;
   name: string;
+  /**
+   * The column the card is in — same field name as planka_get_card. Present
+   * whenever the result spans more than one column; on the single-column path
+   * the response root carries `list: {id, name}` instead.
+   */
+  listId?: string;
   /** Only when the result spans more than one column. */
   listName?: string;
   labels?: string[];
+  /** Always present when the card has labels: what set_card_labels needs. */
+  labelIds?: string[];
   members?: string[];
   /** "completed/total", only when the card has checklist items. */
   tasks?: string;
@@ -563,9 +571,7 @@ export interface CardDigest {
   updatedAt?: string;
   description?: string;
   /** detail: "full" only. */
-  listId?: string;
   boardId?: string;
-  labelIds?: string[];
   position?: number;
   type?: string;
   createdAt?: string;
@@ -603,6 +609,12 @@ function toDigest(
   };
 
   if (options.withListName) {
+    // Same names and same meanings as planka_get_card's `card.listId` /
+    // `card.listName`: one vocabulary across the two digests, so a match can be
+    // moved without a third call to find out where it lives. Omitted on the
+    // single-column path only because the response root already carries
+    // `list: {id, name}` — the id is never actually missing.
+    digest.listId = card.listId;
     digest.listName = index.listNameById.get(card.listId) ?? "";
   }
   if (options.withLabels) {
@@ -612,6 +624,11 @@ function toDigest(
     const labelNames = index.labelNamesByCard.get(card.id) ?? [];
     if (labelNames.length > 0) digest.labels = labelNames;
   }
+  // IDs travel with the names, in digest too: planka_set_card_labels takes ids
+  // and only ids, and find_cards used to publish the names alone — which sent
+  // the model back to planka_board_summary for data it already had.
+  const labelIds = index.labelIdsByCard.get(card.id) ?? [];
+  if (labelIds.length > 0) digest.labelIds = labelIds;
   if (members.length > 0) digest.members = members;
   if (counts && counts.total > 0) {
     digest.tasks = `${counts.completed}/${counts.total}`;
@@ -629,7 +646,6 @@ function toDigest(
   if (full) {
     digest.listId = card.listId;
     digest.boardId = card.boardId;
-    digest.labelIds = index.labelIdsByCard.get(card.id) ?? [];
     digest.position = card.position;
     digest.type = card.type;
     digest.createdAt = card.createdAt;

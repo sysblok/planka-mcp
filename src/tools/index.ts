@@ -106,9 +106,18 @@ export function getTool(
  * With one tool per action (create/update/delete instead of a `manage_*` enum)
  * `required` is finally expressive enough for this generic check to carry the
  * weight the hand-written guards used to.
+ *
+ * Checked against `effectiveInputSchema`, never the raw registry schema: what
+ * the deployment ANNOUNCED is what the call is judged by. Doing it the other
+ * way is how `PLANKA_DEFAULT_BOARD_ID` used to reject `planka_board_summary {}`
+ * while its own tools/list entry said `boardId` was optional.
  */
-export function findMissingRequiredArgs(tool: Tool, args: unknown): string[] {
-  return missingRequiredArgs(tool.inputSchema, args);
+export function findMissingRequiredArgs(
+  tool: Tool,
+  args: unknown,
+  policy: AccessPolicy = getPolicy()
+): string[] {
+  return missingRequiredArgs(effectiveInputSchema(tool, policy), args);
 }
 
 /**
@@ -130,6 +139,11 @@ export const DEPRECATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   // Not an alias, but its own description opens with DEPRECATED: the summary
   // plus find_cards replaced it, and it is the most expensive read here.
   "planka_get_board",
+  // Literal aliases: same handler, same properties, and their own descriptions
+  // already said "prefer planka_find_cards" / "prefer planka_board_summary".
+  // Together they are the two most expensive schemas in tools/list.
+  "planka_list_cards",
+  "planka_list_lists",
 ]);
 
 /**
@@ -168,6 +182,21 @@ function applyDefaultBoard(
 }
 
 /**
+ * The schema a tool is actually published — and judged — with.
+ *
+ * The single source of truth for both sides of the contract: `tools/list`
+ * advertises this, and the runtime presence check validates against this.
+ */
+export function effectiveInputSchema(
+  tool: { inputSchema: Tool["inputSchema"] },
+  policy: AccessPolicy = getPolicy()
+): Tool["inputSchema"] {
+  return policy.defaultBoardId
+    ? applyDefaultBoard(tool.inputSchema, policy.defaultBoardId)
+    : tool.inputSchema;
+}
+
+/**
  * Get all tool definitions (for MCP listTools), after the access policy:
  * read-only and disabled tools are not advertised at all.
  */
@@ -186,9 +215,7 @@ export function getToolDefinitions(policy: AccessPolicy = getPolicy()) {
         name: tool.name,
         ...(presentation ? { title: presentation.title } : {}),
         description: tool.description,
-        inputSchema: policy.defaultBoardId
-          ? applyDefaultBoard(tool.inputSchema, policy.defaultBoardId)
-          : tool.inputSchema,
+        inputSchema: effectiveInputSchema(tool, policy),
         ...(presentation ? { annotations: presentation.annotations } : {}),
         ...(presentation?._meta ? { _meta: presentation._meta } : {}),
       };

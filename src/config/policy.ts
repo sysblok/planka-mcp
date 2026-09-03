@@ -25,7 +25,10 @@ export interface AccessPolicy {
   disabledTools: string[];
   /** Drop deprecated tools (old names kept as aliases) from `tools/list`. */
   hideDeprecated: boolean;
-  /** Lists that must not receive cards nor be edited/deleted. */
+  /**
+   * Lists that must not receive cards, be edited or deleted — and whose cards
+   * may not be moved, archived or deleted out of them either.
+   */
   protectedListIds: string[];
   /**
    * Label that `planka_board_summary` flags as "unblocked". `null` = none: the
@@ -44,7 +47,10 @@ export interface AccessPolicy {
  *
  * A heuristic over the name ("does it start with get_?") would silently
  * misclassify the next tool someone adds. This set is the contract:
- * `tests/unit/policy.test.ts` checks it stays exhaustive against the registry.
+ * `tests/unit/policy.test.ts` asserts, tool by tool, that membership here
+ * matches the `readOnlyHint` each tool advertises in `toolPresentation` — so a
+ * write tool that nobody listed here fails the suite instead of staying
+ * visible under `PLANKA_READ_ONLY=true`.
  */
 export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "planka_create_card",

@@ -167,7 +167,10 @@ describe("get_card digest", () => {
     });
 
     const body = payload(await getCardTool.handler({ cardId: "card-1" }));
-    expect(body.card.listName).toBeUndefined();
+    // null, not absent: "the board could not be read" and "the card has no
+    // column" must not look the same.
+    expect(body.card.listName).toBeNull();
+    expect(body.card.listNameUnavailable).toMatch(/board could not be read/);
     expect(body.labels).toEqual([
       { id: "label-1", name: null },
       { id: "label-2", name: null },

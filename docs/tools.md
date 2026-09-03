@@ -1,6 +1,6 @@
 # Tools reference
 
-The server exposes exactly 41 tools: 36 in active use plus 5 deprecated ones kept
+The server exposes exactly 41 tools: 34 in active use plus 7 deprecated ones kept
 as aliases (see [Deprecated aliases](#deprecated-aliases); `PLANKA_HIDE_DEPRECATED`
 takes them out of `tools/list`). Tool results are MCP text content containing
 JSON (minified — the indentation was pure token cost). On an expected Planka
@@ -18,7 +18,13 @@ what was asked for. The response fields:
 | `verified: true` | A re-read confirmed the change. This is the only real success. |
 | `verified: false` + `isError` | The re-read contradicted the write, or the write could not be checked. Do not assume the write failed: read before retrying. |
 | `verificationError` | The re-read itself failed. The write may or may not have landed. |
-| `verificationUnavailable` | Verification was structurally impossible (a task or attachment whose card is unknown). Not an error, but not a proven success either. |
+| `verificationUnavailable` | Verification was structurally impossible (a task or attachment whose card is unknown). The message names the parameter — usually `cardId` — that would have made the check possible. |
+
+**`success` mirrors `verified`, and nothing else.** "I could not check" is not a
+success: a result that carried `success: true` next to `verified: false` and
+`"delete not confirmed"` was read by models as done. Every unverified write now
+answers `success: false` with `isError`, and says what to pass to get it
+verified.
 | `partialFailure` | A follow-up step failed (`planka_create_card` only). The card id is always present anyway. |
 | `notLanded` | The fields, or the list, that the re-read says did not change. |
 
@@ -68,19 +74,22 @@ configured Planka instance, not the open web.
 | Reads (`get_*`, `list_*`, `find_cards`, `board_summary`) | `true` | `false` | `true` |
 | Additive writes (`create_card`, `create_tasks`, `create_comment`, `create_label`, `create_list`, `add_attachment`) | `false` | `false` | `false` |
 | Converging writes (`move_card`, `update_task`, `update_label`, `update_list`, `update_comment`) | `false` | `false` | `true` |
-| Data-losing writes (`update_card`, `set_card_labels`, every `delete_*`) | `false` | `true` | `true` |
-| Deprecated multi-action aliases (`manage_labels`, `manage_lists`) | `false` | `true` | `false` |
+| Data-losing writes (`update_card`, `set_card_labels`, `set_card_members`, `archive_card`, `move_list_cards`, every `delete_*`) | `false` | `true` | `true` |
+| Deprecated multi-action aliases (`manage_labels`, `manage_lists`, `manage_comment`) | `false` | `true` | `false` |
 
 **Anthropic `_meta`.** Claude Code does not gate permissions on the standard
 hints; it reads two `_meta` keys instead, and the server ships both:
 
 - `anthropic/requiresUserInteraction: true` forces the permission prompt even
-  under an `allow` rule — set on `planka_delete_card`, `planka_delete_task`,
-  `planka_delete_attachment`, `planka_delete_label`, `planka_delete_list`,
-  `planka_delete_comment`, and the deprecated `planka_manage_comment`,
+  under an `allow` rule — set on eleven tools: `planka_delete_card`,
+  `planka_delete_task`, `planka_delete_attachment`, `planka_delete_label`,
+  `planka_delete_list`, `planka_delete_comment`, `planka_archive_card`,
+  `planka_move_list_cards`, and the deprecated `planka_manage_comment`,
   `planka_manage_lists` and `planka_manage_labels`. The three aliases are marked
   whole because one of their actions deletes: a list takes its cards with it, a
-  label disappears from every card that carried it.
+  label disappears from every card that carried it. `archive_card` and
+  `move_list_cards` are there because both move cards a human will look for
+  where they used to be.
 - `anthropic/maxResultSizeChars: 4500000` on `planka_view_attachment`, so a
   base64 image up to 3 MB is not clipped by the default per-tool ceiling.
 
@@ -157,10 +166,12 @@ parameters**.
 | Which cards carry this label, mention this text, belong to this person? | `planka_find_cards` |
 | I need every field of every card, in one object | `planka_get_board` (deprecated) |
 
-`planka_list_lists` and `planka_list_cards` are **aliases** kept for existing
-callers: `planka_list_lists` is `planka_board_summary` with `cardsFrom: []`, and
-`planka_list_cards` is `planka_find_cards` with `listId`. Same implementation,
-same response.
+`planka_list_lists` and `planka_list_cards` are **deprecated aliases** kept for
+existing callers: `planka_list_lists` is `planka_board_summary` with
+`cardsFrom: []`, and `planka_list_cards` is `planka_find_cards` with `listId`.
+Same implementation, same response — and together they were the two most
+expensive schemas in `tools/list`, which is why `PLANKA_HIDE_DEPRECATED` now
+drops them too.
 
 ### Measured, against the real reference board
 
@@ -265,7 +276,7 @@ Search a board:
   "boardId": "2234567890123456789",
   "query": "export timeout",
   "labelName": "ready",
-  "withDescription": true
+  "descriptionChars": 200
 }
 ```
 
@@ -275,21 +286,35 @@ Search a board:
 | `listId` | none | One column, one request, never truncated |
 | `listName` | none | Column-name fragment; costs a board read |
 | `query` | none | Name **and** description. Several words are ANDed; a leading `/` makes the rest a case-insensitive regular expression |
-| `labelName` (alias `labelFilter`) | none | Exact label name, case- and accent-insensitive |
+| `labelName` | none | Exact label name, case- and accent-insensitive. `labelFilter` is still accepted as an alias, but is no longer announced in the schema |
 | `labelIds` | none | Label IDs, OR between them |
 | `userIds` | none | Members **or** task assignees, OR between them |
 | `withLabels` | `true` | `false` skips the extra board read on the `listId` path |
 | `detail` | `"digest"` | `"full"` returns every field of the card, description included |
-| `withDescription` | `false` | Adds a 200-character preview |
-| `descriptionChars` | `0` | Length of that preview; overrides `withDescription` |
+| `descriptionChars` | `0` | Per-match description preview, in characters. `withDescription: true` is still accepted (it means 200 characters) but is no longer announced in the schema |
 | `limit` | `25` | Maximum `200` |
 | `offset` | `0` | Pass the previous response's `nextOffset` to page |
 
-The digest of a card is `id`, `name`, `labels`, `members`, `tasks` (`"2/5"`),
-`dueDate`, `commentsTotal` and `updatedAt`. Empty values are left out entirely,
-and the column is **not repeated on every card**: when the search is scoped to
-one column the response carries `list: {id, name}` once, and only a result
-spanning several columns puts `listName` on each match.
+The digest of a card is `id`, `name`, `labels`, `labelIds`, `members`, `tasks`
+(`"2/5"`), `dueDate`, `commentsTotal` and `updatedAt`. Empty values are left out
+entirely, and the column is **not repeated on every card**: when the search is
+scoped to one column the response carries `list: {id, name}` once, and only a
+result spanning several columns puts `listId` and `listName` on each match.
+
+**The two digests share one vocabulary.** `labelIds` is in the digest, not only
+in `detail: "full"`, because `planka_set_card_labels` takes label *ids* and only
+ids: publishing the names alone sent the caller back to `planka_board_summary`
+for a value `find_cards` already had. Where a field exists in both
+`planka_find_cards` and `planka_get_card` it means the same thing and carries the
+same name:
+
+| Concept | `planka_find_cards` (digest) | `planka_get_card` (digest) |
+|---|---|---|
+| column | `listId` (multi-column results) + `listName` | `card.listId` + `card.listName` (`null` plus `listNameUnavailable` when the board could not be read) |
+| labels | `labels` (names) + `labelIds` | `labels: [{id, name}]` |
+| members | `members` (names) | `members: [{id, name}]` |
+| tasks | `tasks: "2/5"` | `tasks: {done, total, lists}` |
+| description | `description`, only when `descriptionChars > 0` | `descriptionPreview` + `descriptionChars` + `descriptionTruncated` |
 
 The response says where it came from and what it could not see:
 
@@ -492,16 +517,23 @@ Creates a board label.
 {
   "boardId": "2234567890123456789",
   "name": "needs-decision",
-  "color": "berry-red"
+  "color": "berry-red",
+  "position": 65536
 }
 ```
+
+`position` is optional; Planka appends the label when it is omitted.
 
 `boardId`, `name` and `color` are `required` in the JSON Schema, so a client
 rejects an incomplete call before it leaves. With `PLANKA_DEFAULT_BOARD_ID` set,
 `boardId` drops out of `required` and is filled in.
 
-`color` is a real JSON Schema `enum` of the 43 Planka 2.x colors, so a bad color
-is rejected before the call leaves the client. Unknown colors are still accepted
+`color` is a real JSON Schema `enum` of the 43 Planka 2.x colors **here and only
+here** — repeating the enum on `planka_update_label` and `planka_manage_labels`
+cost ~650 characters of every session for the same list. Those two take the same
+values, validated server-side with a message that spells them out, and the
+`planka://labels/colors` resource serves the list on demand.
+A bad color is rejected before the call leaves the client. Unknown colors are still accepted
 on reads, so one new upstream color cannot break a board response. Run
 `planka_board_summary` to see the colors already in use.
 
@@ -1098,11 +1130,13 @@ ends, so a protected column can be neither filled nor drained.
 
 ## Deprecated aliases
 
-Five names are kept alive only so callers written against them keep working.
+Seven names are kept alive only so callers written against them keep working.
 They add no behaviour: each routes its arguments to the tool that replaced it.
 
 | Deprecated | Use instead |
 |---|---|
+| `planka_list_cards` | `planka_find_cards` with `listId` |
+| `planka_list_lists` | `planka_board_summary` with `cardsFrom: []` |
 | `planka_manage_labels` | `planka_create_label` · `planka_update_label` · `planka_delete_label` |
 | `planka_manage_lists` | `planka_create_list` · `planka_update_list` · `planka_delete_list` |
 | `planka_manage_comment` | `planka_update_comment` · `planka_delete_comment` (and `planka_create_comment`) |
@@ -1121,8 +1155,14 @@ The aliases borrow their target's `required` at dispatch time, so
 `planka_manage_labels` with `action: "update"` and no `labelId` is refused with a
 message naming `planka_update_label` rather than sending an empty write.
 
-**Hiding them.** `PLANKA_HIDE_DEPRECATED=true` drops all five from `tools/list`,
-which is worth ~4.7 kB of `tools/list` (34,444 → 29,788 characters, measured).
+They also borrow their target's **access policy**: `planka_manage_lists` with
+`action: "delete"` is refused when `planka_delete_list` is in
+`PLANKA_DISABLED_TOOLS`, and `planka_add_comment` is refused when
+`planka_create_comment` is. An alias is a second name for a tool, never a way
+around the configuration that switched it off.
+
+**Hiding them.** `PLANKA_HIDE_DEPRECATED=true` drops all seven from `tools/list`,
+which is worth ~6.8 kB (32,840 → 26,034 characters, measured on 0.3.0).
 They stay callable: a model working from a cached tool list, or from a skill that
 names one, gets the real behaviour instead of "unknown tool".
 

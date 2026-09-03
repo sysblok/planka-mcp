@@ -55,7 +55,7 @@ describe("PlankaClient", () => {
     );
 
     await expect(client.get("/api/projects")).rejects.toThrow(
-      /redirects to HTTPS.*drop the POST body/i
+      /PLANKA_BASE_URL is http:\/\/.*redirects to HTTPS the POST body is dropped/i
     );
   });
 

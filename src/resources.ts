@@ -37,7 +37,7 @@ export function labelColorsDocument(): string {
   return JSON.stringify(
     {
       description:
-        "Valid values for the `color` field of planka_manage_labels. Planka rejects anything else with a validation error.",
+        "Valid values for the `color` field of planka_create_label and planka_update_label. Planka rejects anything else with a validation error.",
       colors: LabelColorSchema.options,
       count: LabelColorSchema.options.length,
     },
@@ -101,7 +101,7 @@ export const RESOURCES: readonly ResourceDefinition[] = [
     name: "label-colors",
     title: "Valid label colors",
     description:
-      "Every color planka_manage_labels accepts, as JSON. Generated from the schema, so it can never drift from what the server validates.",
+      "Every color planka_create_label and planka_update_label accept, as JSON. Generated from the schema, so it can never drift from what the server validates.",
     mimeType: "application/json",
     generate: labelColorsDocument,
   },

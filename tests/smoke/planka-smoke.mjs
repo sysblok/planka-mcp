@@ -407,6 +407,28 @@ async function run() {
     taskUpdated
   );
 
+  // A write that cannot be verified is NOT a success: no cardId means the task
+  // cannot be re-read, and the payload has to say so instead of claiming it.
+  const unverifiable = await callTool("planka_update_task", {
+    taskId,
+    name: "first (done)",
+  });
+  const unverifiableBody = (() => {
+    try {
+      return JSON.parse(unverifiable.text);
+    } catch {
+      return null;
+    }
+  })();
+  check(
+    "planka_update_task without cardId answers success:false, not a false green",
+    unverifiable.isError === true &&
+      unverifiableBody?.success === false &&
+      unverifiableBody?.verified === false &&
+      String(unverifiableBody?.verificationUnavailable ?? "").includes("cardId"),
+    unverifiableBody ?? unverifiable.text
+  );
+
   const taskAdded = await json("planka_create_tasks", {
     cardId,
     tasks: ["third"],
@@ -629,8 +651,18 @@ async function run() {
     "planka_find_cards by label returns exactly the labelled card",
     byLabel?.total === 1 &&
       byLabel.matches[0].id === cardId &&
+      byLabel.matches[0].listId === list.id &&
       byLabel.matches[0].listName === list.name,
     byLabel
+  );
+
+  // The digest carries the label IDs, not only the names: set_card_labels takes
+  // ids, and a digest without them sent the caller back to board_summary.
+  check(
+    "planka_find_cards digest carries labelIds, so set_card_labels can run on it",
+    Array.isArray(byLabel?.matches?.[0]?.labelIds) &&
+      byLabel.matches[0].labelIds.includes(labelB.label.id),
+    byLabel?.matches?.[0]
   );
 
   // The description was written by the update above and is NOT in the name:

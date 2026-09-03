@@ -155,7 +155,7 @@ server. A card with 120 comments therefore answers 50 and looks complete. Any
 "comment count" derived from one response is the size of that page, never the
 card's total.
 
-What this fork does:
+What planka-mcp does:
 
 - `planka_get_comments` returns `limit` comments (default 20) plus `hasMore` and
   `nextBeforeId`, and `all: true` walks the pages up to a ceiling of 10, after
@@ -223,7 +223,7 @@ accepts:
 Both are per list, not per board. Since enumerating a board's columns, or
 resolving a label name to its ID, needs a `GET /api/boards/:boardId` anyway, and
 that single call already carries every card with its description and label
-links, this fork filters board-level searches locally over that one request.
+links, planka-mcp filters board-level searches locally over that one request.
 Issuing one search per list would be N extra round-trips for data already in
 hand. What stays small in `planka_find_cards` and `planka_board_summary` is the
 **output**, which is what a model pays for.

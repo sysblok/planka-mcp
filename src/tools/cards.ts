@@ -25,6 +25,19 @@ import {
   writeResult,
 } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
+import { assertListWritable, getPolicy } from "../config/policy.js";
+
+/**
+ * PLANKA_PROTECTED_LIST_IDS has to protect a column's CONTENT, not just the
+ * column: emptying it card by card (move, archive, delete) was the way around
+ * it. Costs one extra read, and only on deployments that configured the
+ * variable — with no protected list there is nothing to check.
+ */
+async function assertCardsListWritable(cardId: string, action: string) {
+  if (getPolicy().protectedListIds.length === 0) return;
+  const before = await getCardLight({ cardId });
+  assertListWritable(before.card.listId, undefined, action);
+}
 
 /** Two date values are the same instant (or both empty). */
 function sameDate(a: string | null | undefined, b: string | null | undefined) {
@@ -99,7 +112,12 @@ export const createCardTool = {
             dueDate: params.dueDate,
           }),
         reread: (card) => getCardLight({ cardId: card.id }),
-        landed: (after, card) => after.card.id === card.id,
+        // The re-read is by id, so comparing ids alone is true by construction.
+        // What has to hold is what the CALL asked for: name and column.
+        landed: (after, card) =>
+          after.card.id === card.id &&
+          after.card.name === params.name &&
+          after.card.listId === params.listId,
       });
       const card = created.result;
 
@@ -119,12 +137,17 @@ export const createCardTool = {
       }
 
       // 3. Labels, one by one: a bad labelId is a 404 that must not sink the rest.
-      const labelErrors: string[] = [];
+      const labelErrors: Array<{ labelId: string; reason: string }> = [];
       for (const labelId of requestedLabels) {
         try {
           await addLabelToCard({ cardId: card.id, labelId });
-        } catch {
-          labelErrors.push(labelId);
+        } catch (error) {
+          // A bad labelId and a 403 on the board are indistinguishable without
+          // the reason — and they need opposite reactions from the caller.
+          labelErrors.push({
+            labelId,
+            reason: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
@@ -388,7 +411,17 @@ export const getCardTool = {
         id: details.card.id,
         name: details.card.name,
         listId: details.card.listId,
-        ...(listName !== null ? { listName } : {}),
+        // Always present, even as null: an omitted field cannot be told apart
+        // from "the board could not be read", and the model would assume the
+        // card has no column.
+        listName,
+        ...(listName === null
+          ? {
+              listNameUnavailable: names
+                ? "the board does not list this column — it may be the hidden archive or trash"
+                : "the board could not be read, so column and label names were not resolved",
+            }
+          : {}),
         boardId: details.card.boardId,
         dueDate: details.card.dueDate ?? null,
         isDueCompleted:
@@ -630,6 +663,8 @@ export const moveCardTool = {
     position?: number;
   }) => {
     try {
+      await assertCardsListWritable(params.cardId, "move cards out of");
+
       const written = await verifiedWrite({
         write: () =>
           moveCard({
@@ -699,6 +734,8 @@ export const deleteCardTool = {
   },
   handler: async (params: { cardId: string }) => {
     try {
+      await assertCardsListWritable(params.cardId, "delete cards from");
+
       const deleted = await verifiedDelete({
         del: () => deleteCard({ cardId: params.cardId }),
         confirmGone: () =>

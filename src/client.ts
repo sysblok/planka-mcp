@@ -199,9 +199,10 @@ export class PlankaClient {
 
     const data = await this.safeParseJson(response);
     if (data === null) {
-      const redirectHint =
-        config.baseUrl.startsWith("http://") || response.redirected
-          ? " Your HTTP URL probably redirects to HTTPS; a 301/302 can drop the POST body. Configure the final https:// URL directly."
+      const redirectHint = response.redirected
+        ? " The request was redirected: a 301/302 can drop the POST body. Configure the final URL directly."
+        : config.baseUrl.startsWith("http://")
+          ? " PLANKA_BASE_URL is http://: if the server redirects to HTTPS the POST body is dropped. Configure the final https:// URL directly."
           : " Check that PLANKA_BASE_URL points to the Planka API origin, not a proxy error page.";
       throw new PlankaAuthError(
         `Authentication returned HTML or another non-JSON response.${redirectHint}`
@@ -260,9 +261,13 @@ export class PlankaClient {
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/html")) return;
     const config = this.getConfig();
-    const redirectHint =
-      config.baseUrl.startsWith("http://") || response.redirected
-        ? " Your HTTP URL probably redirects to HTTPS; configure the final https:// URL directly."
+    // The HTTP→HTTPS redirect is the most common cause, not the only one: an
+    // https:// base URL that was never redirected cannot be it, and neither can
+    // a plain http:// origin that answered directly.
+    const redirectHint = response.redirected
+      ? " The request was redirected: configure the final URL directly, a 301/302 can drop the body."
+      : config.baseUrl.startsWith("http://")
+        ? " PLANKA_BASE_URL is http://: if the server redirects to HTTPS, configure the final https:// URL directly. Otherwise check that it points at the Planka API origin, not a proxy error page."
         : " Check that PLANKA_BASE_URL points to the Planka API origin, not a proxy error page.";
     // A non-GET reaching here went somewhere: the SPA catch-all is GET-only, so
     // HTML on a write means a redirect or a proxy, and the write may have run.
