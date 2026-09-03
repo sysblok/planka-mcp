@@ -41,7 +41,15 @@ function withPlankaErrors<P>(
   };
 }
 
-/** Arguments shared by planka_find_cards and its planka_list_cards alias. */
+/**
+ * Arguments shared by planka_find_cards and its planka_list_cards alias.
+ *
+ * `labelFilter` and `withDescription` are still accepted — a caller written
+ * against the old names keeps working — but they are no longer announced in
+ * `inputSchema`: both are aliases of a parameter that is (`labelName`,
+ * `descriptionChars`), and every announced property is paid for once per
+ * session by every client.
+ */
 export interface FindCardsParams {
   boardId?: string;
   listId?: string;
@@ -63,7 +71,7 @@ const findCardsProperties = {
   boardId: {
     type: "string",
     description:
-      "The board ID. Optional when the server has PLANKA_DEFAULT_BOARD_ID; ignored when listId is given (the list names its own board).",
+      "Board ID. Optional with PLANKA_DEFAULT_BOARD_ID; ignored when listId is given.",
   },
   listId: {
     type: "string",
@@ -84,10 +92,6 @@ const findCardsProperties = {
     type: "string",
     description:
       "Only cards carrying this label name (exact name, case- and accent-insensitive). If the board has no such label, the response says so and lists the ones it does have.",
-  },
-  labelFilter: {
-    type: "string",
-    description: "Alias of labelName.",
   },
   labelIds: {
     type: "array",
@@ -111,15 +115,10 @@ const findCardsProperties = {
     description:
       "digest (default): id, name, labels, members, tasks, dueDate, commentsTotal, updatedAt. full: every field of the card, description included.",
   },
-  withDescription: {
-    type: "boolean",
-    description:
-      "Add a 200-character description preview per match. Default false — this is the expensive field.",
-  },
   descriptionChars: {
     type: "number",
     description:
-      "Length of that preview. 0 (the default) leaves descriptions out; overrides withDescription.",
+      "Per-match description preview, in characters. 0 (the default) leaves descriptions out.",
   },
   limit: {
     type: "number",
@@ -176,8 +175,7 @@ export const findCardsTool = {
 export const listCardsTool = {
   name: "planka_list_cards",
   description:
-    "Alias of planka_find_cards with listId: the cards of ONE column, in one request. " +
-    "Same arguments and same response; prefer planka_find_cards.",
+    "DEPRECATED: use planka_find_cards with listId. Same arguments, same handler, same response.",
   inputSchema: {
     type: "object" as const,
     properties: findCardsProperties,
@@ -268,8 +266,7 @@ export const boardSummaryTool = {
 export const listListsTool = {
   name: "planka_list_lists",
   description:
-    "Alias of planka_board_summary with cardsFrom: []: the columns of a board with their card counts, plus the board's labels, and no cards. " +
-    "Prefer planka_board_summary.",
+    "DEPRECATED: use planka_board_summary with cardsFrom: []. Columns with card counts plus the board's labels, no cards.",
   inputSchema: {
     type: "object" as const,
     properties: {

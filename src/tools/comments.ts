@@ -72,8 +72,14 @@ export const addCommentTool = {
   description:
     "DEPRECATED: use planka_create_comment. Kept so existing callers keep working; it forwards every argument unchanged.",
   inputSchema: createCommentTool.inputSchema,
+  // Routed through dispatchAction so the alias inherits planka_create_comment's
+  // access policy instead of walking around PLANKA_DISABLED_TOOLS.
   handler: (params: { cardId: string; text: string }) =>
-    createCommentTool.handler(params),
+    dispatchAction(
+      "planka_add_comment",
+      { ...params, action: "create" },
+      { create: createCommentTool }
+    ),
 };
 
 /** Comments returned when the caller does not say. Planka's page holds 50. */
@@ -240,7 +246,7 @@ export const deleteCommentTool = {
           return !after.some((c) => c.id === params.commentId);
         },
         unknownReason:
-          "Planka did not echo the deleted comment, so its card is unknown and the delete could not be confirmed",
+          "Planka did not echo the deleted comment, so its card is unknown and the delete could not be confirmed — call planka_get_comments on the card to see whether it is gone",
       });
 
       return writeResult(
@@ -249,7 +255,7 @@ export const deleteCommentTool = {
           ...(deleted.result ? { cardId: deleted.result.cardId } : {}),
           message: deleted.verified
             ? `Comment ${params.commentId} deleted`
-            : `Comment ${params.commentId} delete not confirmed`,
+            : `Comment ${params.commentId} delete NOT confirmed — check with planka_get_comments before retrying`,
         },
         deleted
       );

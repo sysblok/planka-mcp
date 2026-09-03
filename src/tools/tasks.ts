@@ -143,6 +143,11 @@ export const updateTaskTool = {
               name: task.name,
               isCompleted: task.isCompleted,
             },
+            // Planka's echo of the PATCH, not a re-read: the write-echo trap
+            // documented in docs/planka-2x-gotchas.md. Labelled so the model
+            // does not mistake it for confirmed state.
+            taskFromWriteEcho: true,
+            message: `Task ${params.taskId} was sent to Planka but NOT verified. Call planka_update_task again with cardId, or planka_get_card, to confirm it landed.`,
           },
           { verified: false, verificationUnavailable: NO_CARD_ID }
         );
@@ -237,7 +242,9 @@ export const deleteTaskTool = {
           ...(cardId ? { cardId } : {}),
           message: deleted.verified
             ? `Task ${params.taskId} deleted`
-            : `Task ${params.taskId} delete not confirmed`,
+            : cardId
+              ? `Task ${params.taskId} delete NOT confirmed: it still reads on card ${cardId}`
+              : `Task ${params.taskId} delete NOT confirmed — pass cardId to have it verified, or read the card with planka_get_card`,
         },
         deleted
       );

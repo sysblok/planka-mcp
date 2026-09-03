@@ -178,6 +178,10 @@ export const archiveCardTool = {
       }
 
       // --- archive ---------------------------------------------------------
+      // Archiving takes the card OUT of its column, so the origin is checked
+      // too — otherwise a protected column can be emptied one archive at a time.
+      assertListWritable(before.card.listId, undefined, "archive cards out of");
+
       const system = await getBoardSystemLists(boardId);
       if (!system.archiveListId) throw noArchiveList(boardId);
       assertListWritable(system.archiveListId, undefined, "archive cards into");
@@ -189,7 +193,10 @@ export const archiveCardTool = {
               type: "text" as const,
               text: JSON.stringify({
                 success: true,
+                // Derived from the read above, not asserted: `before` IS the
+                // re-read, and it already says the card sits in the archive.
                 verified: true,
+                verifiedBy: "the card was read before the write and is already archived; nothing was written",
                 card: {
                   id: before.card.id,
                   name: before.card.name,
@@ -303,7 +310,10 @@ export const moveListCardsTool = {
               type: "text" as const,
               text: JSON.stringify({
                 success: true,
+                // `from.count === 0` comes from readListState, a real read of
+                // the column: the desired state already holds, nothing written.
                 verified: true,
+                verifiedBy: "the source column was read and is already empty; nothing was written",
                 moved: 0,
                 fromRemaining: 0,
                 toTotal: toBefore,

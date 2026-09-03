@@ -88,6 +88,10 @@ export function idKindFromContext(context?: string): string | undefined {
   const path = context.split(" ").pop() ?? context;
   const match = /\/api\/([a-z-]+)\/([^/?]+)/.exec(path);
   if (!match) return undefined;
+  // `/api/users/me` is a literal route, not an id: every Planka id is a string
+  // of digits, so anything else in that slot is a named endpoint and telling
+  // the caller "this has to be a userId" would be wrong.
+  if (!/^\d+$/.test(match[2])) return undefined;
   return ID_KIND_BY_COLLECTION[match[1]];
 }
 

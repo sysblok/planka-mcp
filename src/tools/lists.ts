@@ -14,7 +14,7 @@ import {
   verifiedWrite,
   writeResult,
 } from "../operations/verify.js";
-import { getPolicy } from "../config/policy.js";
+import { assertBoardAllowed, getPolicy } from "../config/policy.js";
 import { dispatchAction } from "./dispatch.js";
 import { guarded } from "./guard.js";
 
@@ -48,7 +48,10 @@ export const createListTool = {
     type?: "active" | "closed";
   }) =>
     guarded(async () => {
-      const boardId = params.boardId ?? getPolicy().defaultBoardId;
+      // Explicit, like every other write path: the allowlist must not depend
+      // on a lower layer the handler does not control.
+      const requested = params.boardId ?? getPolicy().defaultBoardId;
+      const boardId = requested ? assertBoardAllowed(requested) : null;
       if (!boardId) {
         return {
           content: [
@@ -181,7 +184,7 @@ export const deleteListTool = {
           return !board.lists.some((l) => l.id === params.listId);
         },
         unknownReason:
-          "Planka did not echo the deleted list, so its board is unknown and the delete could not be confirmed",
+          "Planka did not echo the deleted list, so its board is unknown and the delete could not be confirmed — call planka_board_summary on the board to see whether the column is gone",
       });
 
       return writeResult(
@@ -190,7 +193,7 @@ export const deleteListTool = {
           ...(deleted.result ? { boardId: deleted.result.boardId } : {}),
           message: deleted.verified
             ? `List ${params.listId} deleted, with every card it contained`
-            : `List ${params.listId} delete not confirmed`,
+            : `List ${params.listId} delete NOT confirmed — check with planka_board_summary before retrying`,
         },
         deleted
       );

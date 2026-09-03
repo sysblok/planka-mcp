@@ -17,7 +17,7 @@ import {
   writeResult,
 } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
-import { getPolicy } from "../config/policy.js";
+import { assertBoardAllowed, getPolicy } from "../config/policy.js";
 import { dispatchAction } from "./dispatch.js";
 import { guarded } from "./guard.js";
 
@@ -43,10 +43,22 @@ function badColor(color: string) {
   };
 }
 
+/**
+ * The enum is announced ONCE, on planka_create_label: it is the discovery path,
+ * and 43 colors cost ~650 chars of every session on every tool that repeats
+ * them. update_label and the manage_labels alias take the same colors and
+ * validate them with `badColor()` server-side, which answers with the full list.
+ */
 const colorProperty = {
   type: "string",
   enum: LABEL_COLORS,
   description: "Label color",
+};
+
+const colorPropertyNoEnum = {
+  type: "string",
+  description:
+    "Label color. Same 43 values planka_create_label lists, also served as the planka://labels/colors resource; an invalid one comes back with the full list.",
 };
 
 /**
@@ -73,7 +85,10 @@ export const createLabelTool = {
     position?: number;
   }) =>
     guarded(async () => {
-      const boardId = params.boardId ?? getPolicy().defaultBoardId;
+      // Explicit, like every other write path: the allowlist must not depend
+      // on a lower layer the handler does not control.
+      const requested = params.boardId ?? getPolicy().defaultBoardId;
+      const boardId = requested ? assertBoardAllowed(requested) : null;
       if (!boardId) {
         return {
           content: [
@@ -136,7 +151,7 @@ export const updateLabelTool = {
     properties: {
       labelId: { type: "string", description: "Label ID" },
       name: { type: "string", description: "New label name" },
-      color: colorProperty,
+      color: colorPropertyNoEnum,
     },
     required: ["labelId"],
   },
@@ -208,7 +223,7 @@ export const deleteLabelTool = {
           return !board.labels.some((l) => l.id === params.labelId);
         },
         unknownReason:
-          "Planka did not echo the deleted label, so its board is unknown and the delete could not be confirmed",
+          "Planka did not echo the deleted label, so its board is unknown and the delete could not be confirmed — call planka_board_summary on the board to see whether the label is gone",
       });
 
       return writeResult(
@@ -217,7 +232,7 @@ export const deleteLabelTool = {
           ...(deleted.result ? { boardId: deleted.result.boardId } : {}),
           message: deleted.verified
             ? `Label ${params.labelId} deleted`
-            : `Label ${params.labelId} delete not confirmed`,
+            : `Label ${params.labelId} delete NOT confirmed — check with planka_board_summary before retrying`,
         },
         deleted
       );
@@ -247,8 +262,8 @@ export const manageLabelsTool = {
       name: { type: "string", description: "Label name" },
       color: {
         type: "string",
-        enum: LABEL_COLORS,
-        description: "Label color (required for create)",
+        description:
+          "Label color (required for create). Values: planka_create_label's enum, or the planka://labels/colors resource.",
       },
     },
     required: ["action"],
@@ -335,29 +350,24 @@ export const setCardLabelsTool = {
         addLabelIds: toAdd,
         removeLabelIds: toRemove,
       });
+      // `failed` is derived from setCardLabels' own re-read of the card, so
+      // this IS the verification — no hand-written `verified: true`.
       const ok = result.failed.length === 0;
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              success: ok,
-              verified: true,
-              cardId: params.cardId,
-              labelsAdded: result.added.length,
-              labelsRemoved: result.removed.length,
-              added: result.added,
-              removed: result.removed,
-              alreadyPresent: result.alreadyPresent,
-              notPresent: result.notPresent,
-              failed: result.failed,
-              finalLabelIds: result.finalLabelIds,
-            }),
-          },
-        ],
-        ...(ok ? {} : { isError: true as const }),
-      };
+      return writeResult(
+        {
+          cardId: params.cardId,
+          labelsAdded: result.added.length,
+          labelsRemoved: result.removed.length,
+          added: result.added,
+          removed: result.removed,
+          alreadyPresent: result.alreadyPresent,
+          notPresent: result.notPresent,
+          failed: result.failed,
+          finalLabelIds: result.finalLabelIds,
+        },
+        { verified: ok }
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {

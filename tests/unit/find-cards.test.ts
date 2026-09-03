@@ -214,6 +214,8 @@ describe("findCards on the list path", () => {
     expect(result.matches[0]).toEqual({
       id: "card-1",
       labels: ["decidido"],
+      // The ids travel with the names in digest too: set_card_labels takes ids.
+      labelIds: ["label-go"],
       members: ["Pablo"],
       name: "Ship the webhook",
       tasks: "1/2",
@@ -357,7 +359,7 @@ describe("aliases and deprecations", () => {
 
   it("planka_list_cards is planka_find_cards with listId", async () => {
     expect(listCardsTool.handler).toBe(findCardsTool.handler);
-    expect(listCardsTool.description).toMatch(/Alias of planka_find_cards/);
+    expect(listCardsTool.description).toMatch(/DEPRECATED: use planka_find_cards/);
     expect(listCardsTool.inputSchema.required).toEqual(["listId"]);
 
     const payload = text(await listCardsTool.handler({ listId: "list-todo" }));

@@ -13,7 +13,7 @@ import {
   resolveBoardId,
   toolBlockedReason,
 } from "../../src/config/policy.js";
-import { allTools } from "../../src/tools/index.js";
+import { allTools, toolPresentation } from "../../src/tools/index.js";
 
 const empty = parsePolicy({});
 
@@ -193,11 +193,17 @@ describe("isToolVisible / toolBlockedReason", () => {
     for (const name of WRITE_TOOL_NAMES) {
       expect(registered.has(name), `${name} is not a registered tool`).toBe(true);
     }
-    // Every tool is classified: a read is simply one that is not a write.
-    const reads = allTools
-      .map((t) => t.name)
-      .filter((name) => !WRITE_TOOL_NAMES.has(name));
-    expect(WRITE_TOOL_NAMES.size + reads.length).toBe(allTools.length);
+    // The invariant, not a tautology: membership in WRITE_TOOL_NAMES has to
+    // agree, tool by tool, with the readOnlyHint the tool advertises. A new
+    // write tool that nobody added to the set now fails HERE instead of
+    // quietly staying visible under PLANKA_READ_ONLY=true.
+    for (const tool of allTools) {
+      const presentation = toolPresentation[tool.name];
+      expect(presentation, `${tool.name} has no annotations`).toBeDefined();
+      expect(WRITE_TOOL_NAMES.has(tool.name), tool.name).toBe(
+        !presentation.annotations.readOnlyHint
+      );
+    }
     expect(WRITE_TOOL_NAMES.size).toBe(27);
   });
 });

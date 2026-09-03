@@ -119,8 +119,14 @@ export async function goneOn404(reread: () => Promise<unknown>): Promise<boolean
 /**
  * Standard tool payload for a write.
  *
+ * `success` mirrors `verified` and nothing else. "I could not check" is not a
+ * success: a payload that says `success: true` next to `verified: false` and
+ * "delete not confirmed" is read by the model as done, and the model moves on.
+ *
  * - verified            → success, no isError
- * - unavailable         → not an error, but `verified: false` and the reason
+ * - unavailable         → success:false, verified:false, isError, and a
+ *                         `verificationUnavailable` that names the parameter
+ *                         which would have made the check possible
  * - anything else       → isError, because the write cannot be claimed
  */
 export function writeResult(
@@ -131,9 +137,8 @@ export function writeResult(
     verificationUnavailable?: string;
   }
 ) {
-  const soft = !v.verified && !v.verificationError && v.verificationUnavailable;
   const body: Record<string, unknown> = {
-    success: v.verified || Boolean(soft),
+    success: v.verified,
     verified: v.verified,
     ...(v.verificationError ? { verificationError: v.verificationError } : {}),
     ...(v.verificationUnavailable && !v.verificationError
@@ -144,7 +149,7 @@ export function writeResult(
 
   return {
     content: [{ type: "text" as const, text: JSON.stringify(body) }],
-    ...(v.verified || soft ? {} : { isError: true as const }),
+    ...(v.verified ? {} : { isError: true as const }),
   };
 }
 

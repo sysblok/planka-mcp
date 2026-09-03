@@ -9,7 +9,11 @@ import {
   attachmentDownloadUrl,
 } from "../operations/attachments.js";
 import { Attachment } from "../schemas/entities.js";
-import { verifiedDelete, writeResult } from "../operations/verify.js";
+import {
+  verifiedDelete,
+  verifiedWrite,
+  writeResult,
+} from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
 
 /** Cap for returning images inline to the model (base64 inflates ~33%). */
@@ -65,20 +69,26 @@ export const addAttachmentTool = {
     name?: string;
   }) => {
     try {
-      const attachment = await uploadAttachment({
-        cardId: params.cardId,
-        filePath: params.filePath,
-        name: params.name,
+      // Through verifiedWrite so a re-read that blows up (403, HTML, a 404
+      // that means 403) cannot cost the caller the attachment id: the file is
+      // already uploaded, and retrying without the id duplicates it on the card.
+      const written = await verifiedWrite({
+        write: () =>
+          uploadAttachment({
+            cardId: params.cardId,
+            filePath: params.filePath,
+            name: params.name,
+          }),
+        reread: () => getAttachmentsForCard({ cardId: params.cardId }),
+        landed: (after, attachment) => after.some((a) => a.id === attachment.id),
       });
 
-      // Verify by re-reading the card's attachments: Planka sometimes answers
-      // 200 without persisting, and a write is not done until a read says so.
-      const after = await getAttachmentsForCard({ cardId: params.cardId });
-      const verified = after.some((a) => a.id === attachment.id);
-
       return writeResult(
-        { cardId: params.cardId, attachment: summarize(attachment) },
-        { verified }
+        {
+          cardId: params.cardId,
+          attachment: summarize(written.result),
+        },
+        written
       );
     } catch (error) {
       if (error instanceof PlankaError) return errorResult(error.message);
@@ -274,7 +284,7 @@ export const deleteAttachmentTool = {
           return !after.some((a) => a.id === params.attachmentId);
         },
         unknownReason:
-          "Planka did not echo the deleted attachment and no cardId was passed, so the delete could not be confirmed",
+          "pass cardId to verify: Planka did not echo the deleted attachment, so the card whose attachments would prove it is unknown",
       });
 
       return writeResult(
@@ -285,7 +295,7 @@ export const deleteAttachmentTool = {
             : {}),
           message: deleted.verified
             ? `Attachment ${params.attachmentId} deleted`
-            : `Attachment ${params.attachmentId} delete not confirmed`,
+            : `Attachment ${params.attachmentId} delete NOT confirmed — pass cardId so the card's attachments can be re-read, or call planka_get_attachments`,
         },
         deleted
       );

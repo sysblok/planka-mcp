@@ -17,6 +17,8 @@ import {
   guessMimeType,
   uploadAttachment,
 } from "../../src/operations/attachments.js";
+import { addAttachmentTool } from "../../src/tools/attachments.js";
+import { PlankaError } from "../../src/errors.js";
 
 const attachment = {
   id: "attachment-1",
@@ -110,5 +112,65 @@ describe("attachments", () => {
     expect(path).toBe("/api/cards/card-1/attachments");
     expect(form.get("type")).toBe("file");
     expect(form.get("name")).toBe("attachment.txt");
+  });
+});
+
+/**
+ * The file is already on the card by the time the re-read runs. Losing the id
+ * there is worse than not verifying: the natural retry uploads it twice.
+ */
+describe("planka_add_attachment never loses the id", () => {
+  const file = new URL("./fixtures/attachment.txt", import.meta.url).pathname;
+
+  beforeEach(() => {
+    mocks.get.mockReset();
+    mocks.postMultipart.mockReset();
+  });
+
+  it("verifies against the card's attachments", async () => {
+    mocks.postMultipart.mockResolvedValue({ item: attachment });
+    mocks.get.mockResolvedValue({
+      item: {
+        id: "card-1",
+        boardId: "board-1",
+        listId: "list-1",
+        name: "Card",
+        type: "project",
+        position: 65536,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: null,
+      },
+      included: { attachments: [attachment] },
+    });
+
+    const result = await addAttachmentTool.handler({
+      cardId: "card-1",
+      filePath: file,
+    });
+    const body = JSON.parse(result.content[0].text);
+
+    expect(body.success).toBe(true);
+    expect(body.verified).toBe(true);
+    expect(body.attachment.id).toBe("attachment-1");
+  });
+
+  it("keeps the attachment id when the re-read blows up", async () => {
+    mocks.postMultipart.mockResolvedValue({ item: attachment });
+    mocks.get.mockRejectedValue(
+      new PlankaError("Resource not found", "NOT_FOUND", 404)
+    );
+
+    const result = await addAttachmentTool.handler({
+      cardId: "card-1",
+      filePath: file,
+    });
+    const body = JSON.parse(result.content[0].text);
+
+    expect(result.isError).toBe(true);
+    expect(body.success).toBe(false);
+    expect(body.verified).toBe(false);
+    expect(body.verificationError).toMatch(/could not be re-read/);
+    // The point of the whole fix: the id survives the failed verification.
+    expect(body.attachment.id).toBe("attachment-1");
   });
 });
