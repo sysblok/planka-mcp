@@ -100,7 +100,7 @@ async function main() {
       // Handle configuration errors specifically
       if (error instanceof PlankaConfigError) {
         return errorResult(
-          `Configuration error: ${error.message}\n\nRequired environment variables:\n- PLANKA_BASE_URL\n- PLANKA_AGENT_EMAIL\n- PLANKA_AGENT_PASSWORD`
+          `Configuration error: ${error.message}\n\nRequired: PLANKA_BASE_URL, plus EITHER PLANKA_API_KEY (recommended) OR PLANKA_AGENT_EMAIL + PLANKA_AGENT_PASSWORD.`
         );
       }
 

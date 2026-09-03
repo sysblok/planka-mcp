@@ -11,12 +11,23 @@ import { AuthResponse } from "./schemas/responses.js";
 
 export interface ClientConfig {
   baseUrl: string;
-  email: string;
-  password: string;
+  /**
+   * Planka API key (`X-Api-Key`). When present there is no login and no token
+   * refresh: the key is sent on every request, including binary downloads.
+   */
+  apiKey?: string;
+  email?: string;
+  password?: string;
 }
 
 export interface RequestOptions {
   token?: string;
+  /**
+   * Planka API key. Mutually exclusive with `token` by design: Planka reads
+   * `Authorization: Bearer` first and ignores `x-api-key` when both arrive
+   * (`server/api/hooks/current-user/index.js`).
+   */
+  apiKey?: string;
   body?: unknown;
   /**
    * Multipart body (attachment uploads). Content-Type is left unset on
@@ -37,9 +48,14 @@ export function createRequestInit(
   options: RequestOptions = {}
 ): RequestInit {
   const headers: Record<string, string> = {};
-  if (options.token) headers.Authorization = `Bearer ${options.token}`;
-  if (options.token && options.cookieToken) {
-    headers.Cookie = `accessToken=${options.token}`;
+  if (options.apiKey) {
+    // Never together with Authorization: Planka would ignore the key.
+    headers["X-Api-Key"] = options.apiKey;
+  } else if (options.token) {
+    headers.Authorization = `Bearer ${options.token}`;
+    if (options.cookieToken) {
+      headers.Cookie = `accessToken=${options.token}`;
+    }
   }
   if (options.form === undefined && options.body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -62,32 +78,49 @@ export function getConfig(
   env: NodeJS.ProcessEnv = process.env
 ): ClientConfig {
   const baseUrl = env.PLANKA_BASE_URL;
-  const email = env.PLANKA_AGENT_EMAIL;
+  const apiKey = env.PLANKA_API_KEY?.trim() || undefined;
+  const email = env.PLANKA_AGENT_EMAIL?.trim() || undefined;
   const password = env.PLANKA_AGENT_PASSWORD;
 
-  const missing: string[] = [];
-  if (!baseUrl) missing.push("PLANKA_BASE_URL");
-  if (!email) missing.push("PLANKA_AGENT_EMAIL");
-  if (!password) missing.push("PLANKA_AGENT_PASSWORD");
-
-  if (missing.length > 0) {
+  if (!baseUrl) {
     throw new PlankaConfigError(
-      `Missing required environment variables: ${missing.join(", ")}`
+      "Missing required environment variables: PLANKA_BASE_URL"
     );
+  }
+
+  // API key XOR password login. Sending both is a configuration mistake worth
+  // naming: Planka would silently use only one of them.
+  if (apiKey && (email || password)) {
+    throw new PlankaConfigError(
+      "Conflicting Planka credentials: PLANKA_API_KEY is set together with " +
+        "PLANKA_AGENT_EMAIL, PLANKA_AGENT_PASSWORD. Choose one: keep PLANKA_API_KEY " +
+        "(recommended) and unset the email/password pair, or unset PLANKA_API_KEY."
+    );
+  }
+
+  if (!apiKey) {
+    const missing: string[] = [];
+    if (!email) missing.push("PLANKA_AGENT_EMAIL");
+    if (!password) missing.push("PLANKA_AGENT_PASSWORD");
+    if (missing.length > 0) {
+      throw new PlankaConfigError(
+        `Missing Planka credentials (${missing.join(", ")}). Authenticate with EITHER ` +
+          "PLANKA_API_KEY (recommended: no login, no token refresh, no sign-in rate limit) " +
+          "OR the pair PLANKA_AGENT_EMAIL, PLANKA_AGENT_PASSWORD."
+      );
+    }
   }
 
   // Validate URL format
   try {
-    new URL(baseUrl!);
+    new URL(baseUrl);
   } catch {
     throw new PlankaConfigError(`Invalid PLANKA_BASE_URL: ${baseUrl}`);
   }
 
-  // TypeScript narrowing: after the check above, these are guaranteed to be defined
   return {
-    baseUrl: baseUrl!.replace(/\/+$/, ""), // Remove trailing slashes
-    email: email!,
-    password: password!,
+    baseUrl: baseUrl.replace(/\/+$/, ""), // Remove trailing slashes
+    ...(apiKey ? { apiKey } : { email: email!, password: password! }),
   };
 }
 
@@ -138,8 +171,8 @@ export class PlankaClient {
         url,
         createRequestInit("POST", {
           body: {
-            emailOrUsername: config.email,
-            password: config.password,
+            emailOrUsername: config.email!,
+            password: config.password!,
           },
           signal: this.createTimeoutSignal(),
         })
@@ -202,6 +235,36 @@ export class PlankaClient {
   }
 
   /**
+   * The auth material for one request: an API key when configured (no login,
+   * no refresh), a bearer token otherwise. Never both — Planka ignores
+   * `x-api-key` whenever `Authorization` is present.
+   */
+  private async authOptions(): Promise<Pick<RequestOptions, "token" | "apiKey">> {
+    const config = this.getConfig();
+    if (config.apiKey) return { apiKey: config.apiKey };
+    return { token: await this.getToken() };
+  }
+
+  /**
+   * A 200 carrying the SPA's HTML instead of JSON — Planka answers every
+   * unknown GET that way, and an http:// base URL redirected to https:// ends
+   * up here too. Indistinguishable from success if only the status is read.
+   */
+  private assertNotHtml(response: Response, data: unknown, what: string): void {
+    if (data !== null) return;
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html")) return;
+    const config = this.getConfig();
+    const redirectHint =
+      config.baseUrl.startsWith("http://") || response.redirected
+        ? " Your HTTP URL probably redirects to HTTPS; configure the final https:// URL directly."
+        : " Check that PLANKA_BASE_URL points to the Planka API origin, not a proxy error page.";
+    throw new PlankaNetworkError(
+      `${what} returned HTML instead of JSON: that path does not exist in this Planka.${redirectHint}`
+    );
+  }
+
+  /**
    * Safely parses JSON from a response, returning null on failure.
    */
   private async safeParseJson(response: Response): Promise<unknown> {
@@ -223,7 +286,7 @@ export class PlankaClient {
     isRetry = false
   ): Promise<T> {
     const config = this.getConfig();
-    const token = await this.getToken();
+    const auth = await this.authOptions();
     const url = `${config.baseUrl}${path}`;
 
     let response: Response;
@@ -231,7 +294,7 @@ export class PlankaClient {
       response = await this.fetchImpl(
         url,
         createRequestInit(method, {
-          token,
+          ...auth,
           body,
           signal: this.createTimeoutSignal(),
         })
@@ -260,6 +323,8 @@ export class PlankaClient {
       throw createPlankaError(response.status, data, `${method} ${path}`);
     }
 
+    this.assertNotHtml(response, data, `${method} ${path}`);
+
     return data as T;
   }
 
@@ -273,7 +338,7 @@ export class PlankaClient {
     isRetry = false
   ): Promise<T> {
     const config = this.getConfig();
-    const token = await this.getToken();
+    const auth = await this.authOptions();
     const url = `${config.baseUrl}${path}`;
 
     let response: Response;
@@ -281,7 +346,7 @@ export class PlankaClient {
       response = await this.fetchImpl(
         url,
         createRequestInit("POST", {
-          token,
+          ...auth,
           form,
           signal: this.createTimeoutSignal(),
         })
@@ -312,10 +377,11 @@ export class PlankaClient {
    * Accepts an absolute URL on the same host, or a relative path.
    */
   async getBinary(
-    urlOrPath: string
+    urlOrPath: string,
+    isRetry = false
   ): Promise<{ bytes: Uint8Array; mimeType: string | null }> {
     const config = this.getConfig();
-    const token = await this.getToken();
+    const auth = await this.authOptions();
     const url = urlOrPath.startsWith("http")
       ? urlOrPath
       : `${config.baseUrl}${urlOrPath}`;
@@ -325,7 +391,9 @@ export class PlankaClient {
       response = await this.fetchImpl(
         url,
         createRequestInit("GET", {
-          token,
+          ...auth,
+          // Planka serves downloads with the cookie or the API key, and some
+          // deployments disagree on which one they honour.
           cookieToken: true,
           signal: this.createTimeoutSignal(),
         })
@@ -338,6 +406,12 @@ export class PlankaClient {
     }
 
     if (!response.ok) {
+      // Same expired-token retry the JSON path has always had.
+      if (response.status === 401 && this.token && !isRetry) {
+        this.token = null;
+        this.tokenExpiresAt = 0;
+        return this.getBinary(urlOrPath, true);
+      }
       throw createPlankaError(response.status, null, `GET ${url}`);
     }
 

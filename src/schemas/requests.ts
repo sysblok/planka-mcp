@@ -17,7 +17,14 @@ const requiredId = (field: string) =>
 export const CardIdSchema = z.object({ cardId: requiredId("cardId") });
 export type CardIdInput = z.input<typeof CardIdSchema>;
 
-export const BoardIdSchema = z.object({ boardId: requiredId("boardId") });
+/**
+ * `boardId` is optional everywhere: when it is missing the operation falls
+ * back to PLANKA_DEFAULT_BOARD_ID (see src/config/policy.ts), and only fails
+ * when there is no default either.
+ */
+const optionalBoardId = z.string().min(1, "boardId cannot be empty").optional();
+
+export const BoardIdSchema = z.object({ boardId: optionalBoardId });
 export type BoardIdInput = z.input<typeof BoardIdSchema>;
 
 export const ListIdSchema = z.object({ listId: requiredId("listId") });
@@ -117,7 +124,7 @@ export type CreateTaskListInput = z.input<typeof CreateTaskListSchema>;
 
 // Label requests
 export const CreateLabelSchema = z.object({
-  boardId: z.string(),
+  boardId: optionalBoardId,
   name: z.string().min(1, "Label name required"),
   color: LabelColorSchema,
   position: z.number().optional().default(65536),
@@ -176,7 +183,7 @@ export type UpdateCommentParamsInput = z.input<
 
 // List requests
 export const CreateListSchema = z.object({
-  boardId: z.string(),
+  boardId: optionalBoardId,
   name: z.string().min(1, "List name required"),
   position: z.number().optional().default(65536),
   type: ListTypeSchema.optional().default("active"),
@@ -223,7 +230,7 @@ export const ListCardsSchema = z.object({
 export type ListCardsInput = z.input<typeof ListCardsSchema>;
 
 export const BoardSummarySchema = z.object({
-  boardId: requiredId("boardId"),
+  boardId: optionalBoardId,
   /** List names (fragment, accent- and case-insensitive) or list ids. */
   cardsFrom: z.array(z.string().min(1)).optional(),
   /** Label flagged as highlighted on every card returned. */
@@ -234,7 +241,7 @@ export type BoardSummaryInput = z.input<typeof BoardSummarySchema>;
 
 export const FindCardsSchema = z
   .object({
-    boardId: requiredId("boardId"),
+    boardId: optionalBoardId,
     labelName: z.string().min(1).optional(),
     query: z.string().min(1).optional(),
     listId: z.string().min(1).optional(),

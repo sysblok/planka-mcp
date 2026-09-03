@@ -1,7 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.omnicoreos/planka-mcp",
+  "title": "Planka MCP",
   "description": "Planka 2.x MCP server with verified card, task, comment, label, and list operations.",
+  "websiteUrl": "https://github.com/omnicoreos/planka-mcp",
+  "icons": [
+    {
+      "src": "https://avatars.githubusercontent.com/u/265942793?v=4",
+      "mimeType": "image/png",
+      "sizes": [
+        "460x460"
+      ]
+    }
+  ],
   "repository": {
     "url": "https://github.com/omnicoreos/planka-mcp",
     "source": "github"
@@ -24,18 +35,67 @@
           "isSecret": false
         },
         {
+          "name": "PLANKA_API_KEY",
+          "description": "Planka API key (X-Api-Key). Recommended: replaces the email/password login",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
           "name": "PLANKA_AGENT_EMAIL",
-          "description": "Email address or username for the Planka agent user",
-          "isRequired": true,
+          "description": "Email or username of the Planka agent user. Only needed when PLANKA_API_KEY is not set",
+          "isRequired": false,
           "format": "string",
           "isSecret": false
         },
         {
           "name": "PLANKA_AGENT_PASSWORD",
-          "description": "Password for the Planka agent user",
-          "isRequired": true,
+          "description": "Password of the Planka agent user. Only needed when PLANKA_API_KEY is not set",
+          "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "PLANKA_DEFAULT_BOARD_ID",
+          "description": "Board id used when a tool call omits boardId",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_ALLOWED_BOARD_IDS",
+          "description": "Comma-separated board ids this server may see and touch. Everything else is hidden",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_ALLOWED_PROJECT_IDS",
+          "description": "Comma-separated project ids this server may see. Everything else is hidden",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_READ_ONLY",
+          "description": "Set to true to hide and refuse every write tool",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_DISABLED_TOOLS",
+          "description": "Comma-separated tool names to switch off, for example planka_get_board",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "PLANKA_PROTECTED_LIST_IDS",
+          "description": "Comma-separated list ids that must not receive cards nor be edited or deleted",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }

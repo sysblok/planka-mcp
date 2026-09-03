@@ -8,6 +8,7 @@ import {
 } from "../operations/lists.js";
 import { UpdateListParamsInput } from "../schemas/requests.js";
 import { PlankaError } from "../errors.js";
+import { getPolicy } from "../config/policy.js";
 
 /**
  * Tool: planka_manage_lists
@@ -59,12 +60,13 @@ export const manageListsTool = {
     try {
       switch (params.action) {
         case "create": {
-          if (!params.boardId) {
+          const boardId = params.boardId ?? getPolicy().defaultBoardId;
+          if (!boardId) {
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: "Error: boardId is required for create action",
+                  text: "Error: boardId is required for create action (or set PLANKA_DEFAULT_BOARD_ID)",
                 },
               ],
               isError: true,
@@ -83,7 +85,7 @@ export const manageListsTool = {
           }
 
           const list = await createList({
-            boardId: params.boardId,
+            boardId,
             name: params.name,
             position: params.position,
             type: params.type,

@@ -10,6 +10,7 @@ import {
 import { LabelColorSchema } from "../schemas/entities.js";
 import { UpdateLabelParamsInput } from "../schemas/requests.js";
 import { PlankaError } from "../errors.js";
+import { getPolicy } from "../config/policy.js";
 
 // Valid colors for the schema description
 const validColors = LabelColorSchema.options.join(", ");
@@ -58,12 +59,13 @@ export const manageLabelsTool = {
     try {
       switch (params.action) {
         case "create": {
-          if (!params.boardId) {
+          const boardId = params.boardId ?? getPolicy().defaultBoardId;
+          if (!boardId) {
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: "Error: boardId is required for create action",
+                  text: "Error: boardId is required for create action (or set PLANKA_DEFAULT_BOARD_ID)",
                 },
               ],
               isError: true,
@@ -107,7 +109,7 @@ export const manageLabelsTool = {
           }
 
           const label = await createLabel({
-            boardId: params.boardId,
+            boardId,
             name: params.name,
             color: colorParse.data,
           });

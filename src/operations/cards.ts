@@ -3,6 +3,7 @@
  */
 import { plankaClient } from "../client.js";
 import { parseInput } from "../errors.js";
+import { assertListWritable, assertBoardAllowed } from "../config/policy.js";
 import { Card, TaskList, Task, Comment, Label, CardLabel, Attachment } from "../schemas/entities.js";
 import {
   CardIdSchema,
@@ -35,6 +36,7 @@ export interface CardDetails {
  */
 export async function createCard(input: CreateCardInput): Promise<Card> {
   const validated = parseInput(CreateCardSchema, input);
+  assertListWritable(validated.listId, undefined, "create cards in");
 
   const response = await plankaClient.post<unknown>(
     `/api/lists/${validated.listId}/cards`,
@@ -106,6 +108,8 @@ export async function updateCard(
  */
 export async function moveCard(input: MoveCardInput): Promise<Card> {
   const validated = parseInput(MoveCardSchema, input);
+  assertListWritable(validated.listId, undefined, "move cards into");
+  if (validated.boardId) assertBoardAllowed(validated.boardId);
 
   const updatePayload: Record<string, unknown> = {
     listId: validated.listId,

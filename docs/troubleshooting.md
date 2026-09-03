@@ -136,3 +136,68 @@ an invalid JSON token response even though both can look like HTML to a client.
 
 **Fix:** restore the Planka service, verify the final HTTPS URL in a browser, and
 rerun setup. The setup script does not write configuration after failed validation.
+
+## “Conflicting Planka credentials”
+
+`PLANKA_API_KEY` is set **and** so is `PLANKA_AGENT_EMAIL` / `PLANKA_AGENT_PASSWORD`.
+This is refused on purpose rather than guessed: Planka reads `Authorization`
+first and ignores `x-api-key` whenever both headers arrive, so a stale password
+would keep working and the key you thought was in use would be dead weight.
+
+Pick one. Keep `PLANKA_API_KEY` and delete the email/password pair from the
+client configuration — that is the whole point of moving to a key.
+
+## “Missing Planka credentials”
+
+The server has a `PLANKA_BASE_URL` but nothing to authenticate with. Set either
+`PLANKA_API_KEY` (see *Authentication* in the README) **or** both
+`PLANKA_AGENT_EMAIL` and `PLANKA_AGENT_PASSWORD`.
+
+If you meant to use a key: it can only be issued by a Planka **admin**, with
+`POST /api/users/<USER_ID>/api-key`, and the plaintext value appears exactly
+once in `included.apiKey` of that response. There is no way to read it back
+afterwards — Planka stores only the hash and the prefix. Issue a new one.
+
+## “boardId X is not in PLANKA_ALLOWED_BOARD_IDS”
+
+The board allowlist is doing its job. Either the agent picked the wrong id, or
+the board legitimately belongs in scope and the operator should add it to
+`PLANKA_ALLOWED_BOARD_IDS` (ids, comma-separated — names are not accepted, since
+any editor can rename a board).
+
+Remember the allowlist also filters `planka_get_structure`: if a board is missing
+from the structure, it is either outside the allowlist or outside the Planka
+user's board memberships. The second one is checked by Planka and answers 404.
+
+## “boardId is required … PLANKA_DEFAULT_BOARD_ID is not set”
+
+A tool was called without `boardId` and there is no default configured. Either
+pass the id, or set `PLANKA_DEFAULT_BOARD_ID` — with it, `boardId` disappears
+from every tool's `required` list and the default is used whenever the argument
+is omitted.
+
+## “Tool … is disabled / this server runs in read-only mode”
+
+`PLANKA_DISABLED_TOOLS` or `PLANKA_READ_ONLY=true` switched that tool off. The
+tool is also absent from `tools/list`, so an agent hitting this error is usually
+working from a cached tool list or from a skill that names the tool by hand:
+restarting the client resyncs the list.
+
+Do not retry the call — it will be refused identically. Either the operator
+re-enables the tool, or the change gets reported to a human instead of attempted.
+
+## “list … is protected by PLANKA_PROTECTED_LIST_IDS”
+
+A card was about to be created in, or moved into, a column the operator marked as
+protected — or the column itself was about to be edited or deleted. This is a
+client-side guard-rail, not a Planka permission (Planka has no per-list rights):
+it exists so an agent does not close its own work. A human can still do it in the
+Planka UI.
+
+## “No project with id … is visible to this account”
+
+`planka_get_structure` was given a `projectId` that this account cannot see. The
+error lists the projects that *are* visible. Two causes, in order of likelihood:
+the id belongs to a board rather than a project, or the Planka user has no board
+membership inside that project. `PLANKA_ALLOWED_PROJECT_IDS` produces a different
+message that names the variable.

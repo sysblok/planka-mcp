@@ -2,7 +2,13 @@
  * Project operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
-import { parseInput } from "../errors.js";
+import { parseInput, PlankaError } from "../errors.js";
+import {
+  assertProjectAllowed,
+  getPolicy,
+  isBoardAllowed,
+  isProjectAllowed,
+} from "../config/policy.js";
 import { Project, Board, List } from "../schemas/entities.js";
 import { ProjectsResponse, ProjectsIncludedSchema } from "../schemas/responses.js";
 import { GetStructureSchema, GetStructureInput } from "../schemas/requests.js";
@@ -32,10 +38,39 @@ export async function getProjects(): Promise<{
     (response as Record<string, unknown>).included || {}
   );
 
-  return {
-    projects: parsed.items,
-    boards: included.boards || [],
-  };
+  return applyAllowlists(parsed.items, included.boards || []);
+}
+
+/**
+ * Trims what Planka answered down to what this server is allowed to show.
+ *
+ * Filtering here (and not only at call time) is the point: an agent that
+ * cannot SEE the other boards never tries to touch them, and the error paths
+ * that list "known boards" stop leaking names from projects out of scope.
+ */
+export function applyAllowlists(
+  projects: Project[],
+  boards: Board[]
+): { projects: Project[]; boards: Board[] } {
+  const policy = getPolicy();
+  if (policy.allowedProjectIds === null && policy.allowedBoardIds === null) {
+    return { projects, boards };
+  }
+
+  let visibleProjects = projects.filter((p) => isProjectAllowed(p.id, policy));
+  const projectIds = new Set(visibleProjects.map((p) => p.id));
+
+  const visibleBoards = boards.filter(
+    (b) => projectIds.has(b.projectId) && isBoardAllowed(b.id, policy)
+  );
+
+  // With a board allowlist, a project with no allowed board is noise.
+  if (policy.allowedBoardIds !== null) {
+    const withBoards = new Set(visibleBoards.map((b) => b.projectId));
+    visibleProjects = visibleProjects.filter((p) => withBoards.has(p.id));
+  }
+
+  return { projects: visibleProjects, boards: visibleBoards };
 }
 
 /**
@@ -46,12 +81,29 @@ export async function getStructure(
 ): Promise<ProjectStructure[]> {
   const { projectId } = parseInput(GetStructureSchema, input);
 
+  // Outside the allowlist: say so instead of answering an empty structure.
+  if (projectId) assertProjectAllowed(projectId);
+
   const { projects, boards } = await getProjects();
 
   // Filter to specific project if requested
-  const targetProjects = projectId
-    ? projects.filter((p) => p.id === projectId)
-    : projects;
+  let targetProjects = projects;
+  if (projectId) {
+    targetProjects = projects.filter((p) => p.id === projectId);
+    if (targetProjects.length === 0) {
+      const known = projects
+        .map((p) => `  - ${p.id} — "${p.name}"`)
+        .join("\n");
+      throw new PlankaError(
+        `No project with id ${projectId} is visible to this account. ` +
+          (projects.length
+            ? `Visible projects:\n${known}`
+            : "No projects are visible at all — check the credentials and the board memberships of the Planka user."),
+        "NOT_FOUND",
+        404
+      );
+    }
+  }
 
   const structures: ProjectStructure[] = [];
 

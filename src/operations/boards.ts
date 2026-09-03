@@ -361,7 +361,7 @@ function digest(
  * Indexes derived from a single GET on the board: list names, label names per
  * card, and the cards ordered the way the board shows them.
  */
-async function indexBoard(boardId: string) {
+async function indexBoard(boardId: string | undefined) {
   const details = await getBoard({ boardId });
 
   const listById = new Map(details.lists.map((l) => [l.id, l]));
@@ -558,7 +558,7 @@ export async function findCards(
   const hasMore = offset + page.length < matched.length;
 
   return {
-    boardId,
+    boardId: details.board.id,
     filters: {
       ...(labelName ? { labelName } : {}),
       ...(query ? { query } : {}),
