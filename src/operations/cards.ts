@@ -4,7 +4,18 @@
 import { plankaClient } from "../client.js";
 import { parseInput } from "../errors.js";
 import { assertListWritable, assertBoardAllowed } from "../config/policy.js";
-import { Card, TaskList, Task, Comment, Label, CardLabel, Attachment } from "../schemas/entities.js";
+import {
+  Card,
+  TaskList,
+  Task,
+  Label,
+  CardLabel,
+  Attachment,
+  CardMembership,
+  CustomField,
+  CustomFieldValue,
+  User,
+} from "../schemas/entities.js";
 import {
   CardIdSchema,
   CardIdInput,
@@ -15,8 +26,7 @@ import {
   UpdateCardParamsSchema,
   UpdateCardParamsInput,
 } from "../schemas/requests.js";
-import { CardResponse, CardIncludedSchema } from "../schemas/responses.js";
-import { getCommentsForCard, CommentWithAuthor } from "./comments.js";
+import { CardResponse, CardIncludedSchema, ListResponse } from "../schemas/responses.js";
 
 /**
  * Card details without comments (one GET, no comment traffic).
@@ -28,13 +38,12 @@ export interface CardLightDetails {
   labels: Label[];
   cardLabels: CardLabel[];
   attachments: Attachment[];
-}
-
-/**
- * Card details with all related entities.
- */
-export interface CardDetails extends CardLightDetails {
-  comments: CommentWithAuthor[];
+  /** Who is assigned to the card (junction rows). */
+  cardMemberships: CardMembership[];
+  /** Users referenced by the memberships and task assignees. */
+  users: User[];
+  customFields: CustomField[];
+  customFieldValues: CustomFieldValue[];
 }
 
 /**
@@ -81,27 +90,71 @@ export async function getCardLight(input: CardIdInput): Promise<CardLightDetails
     labels: included.labels || [],
     cardLabels: included.cardLabels || [],
     attachments: included.attachments || [],
+    cardMemberships: included.cardMemberships || [],
+    users: included.users || [],
+    customFields: included.customFields || [],
+    customFieldValues: included.customFieldValues || [],
   };
 }
 
 /**
- * Get a card by ID with all related entities, comments included.
+ * The names behind the ids a card carries — best effort, cached.
  *
- * PLANKA 2.x never carries comments in the card response, so they come from
- * their own endpoint. A failure there PROPAGATES on purpose: swallowing it
- * into `comments: []` told the agent "this card has no comments" when the
- * truth was "I could not read them" — the single most expensive lie this
- * server can tell on a board whose memory lives in the comments.
+ * `GET /api/cards/:id` returns `listId` and `cardLabels`, and NOTHING that says
+ * what they are called: Planka 2.x serves label names and list names only from
+ * the board show. So one board GET resolves both, and its result is cached for
+ * a minute because names change far more slowly than cards do.
+ *
+ * Every failure is swallowed: this decorates a read, it never fails one, and
+ * NOTHING is ever verified against this cache.
  */
-export async function getCard(input: CardIdInput): Promise<CardDetails> {
-  const { cardId } = parseInput(CardIdSchema, input);
+export interface BoardNames {
+  lists: Map<string, string | null>;
+  labels: Map<string, string | null>;
+}
 
-  const [light, comments] = await Promise.all([
-    getCardLight({ cardId }),
-    getCommentsForCard({ cardId }),
-  ]);
+const BOARD_NAMES_TTL_MS = 60_000;
+const boardNamesCache = new Map<string, { at: number; names: BoardNames }>();
 
-  return { ...light, comments };
+/** Test seam: drops the memoized board names. */
+export function clearBoardNamesCache(): void {
+  boardNamesCache.clear();
+}
+
+/** {id -> name} out of a raw `included` array, without validating the rest. */
+function nameIndex(rows: unknown): Map<string, string | null> {
+  const index = new Map<string, string | null>();
+  if (!Array.isArray(rows)) return index;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const { id, name } = row as { id?: unknown; name?: unknown };
+    if (typeof id !== "string") continue;
+    index.set(id, typeof name === "string" ? name : null);
+  }
+  return index;
+}
+
+export async function getBoardNames(
+  boardId: string
+): Promise<BoardNames | null> {
+  const cached = boardNamesCache.get(boardId);
+  if (cached && Date.now() - cached.at < BOARD_NAMES_TTL_MS) {
+    return cached.names;
+  }
+
+  try {
+    const response = await plankaClient.get<unknown>(`/api/boards/${boardId}`);
+    const included = (response as { included?: Record<string, unknown> })
+      .included;
+    const names: BoardNames = {
+      lists: nameIndex(included?.lists),
+      labels: nameIndex(included?.labels),
+    };
+    boardNamesCache.set(boardId, { at: Date.now(), names });
+    return names;
+  } catch {
+    return null;
+  }
 }
 
 /**

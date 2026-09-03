@@ -132,6 +132,58 @@ The tool description and the docs now say so out loud, and `planka_manage_lists`
 confirms the deletion by re-reading the board. There is no server-side guard:
 move the cards out first.
 
+## 8. Comments come 50 at a time, and only `beforeId` walks them
+
+Measured against Planka 2.2.1 on 2026-09-03:
+
+```text
+GET /api/cards/:cardId/comments             -> 50 items, newest first (id DESC)
+GET /api/cards/:cardId/comments?beforeId=X  -> the 50 older than X
+```
+
+`?limit=` and `?page=` are **ignored** — the page size is fixed at 50 in the
+server. A card with 120 comments therefore answers 50 and looks complete. Any
+"comment count" derived from one response is the size of that page, never the
+card's total.
+
+What this fork does:
+
+- `planka_get_comments` returns `limit` comments (default 20) plus `hasMore` and
+  `nextBeforeId`, and `all: true` walks the pages up to a ceiling of 10, after
+  which it says `truncated: true`. Its `commentCount` is documented as what the
+  response carries.
+- the card's **real** total is `commentsTotal` on the card row itself, which is
+  what `planka_get_card` reports.
+
+The same `?beforeId=` cursor and the same 50-item page apply to
+`GET /api/cards/:id/actions` and `GET /api/boards/:id/actions`.
+
+## 9. `GET /api/cards/:id` names nothing
+
+The card response's `included` carries `cardMemberships`, `cardLabels`,
+`taskLists`, `tasks`, `customFieldGroups`, `customFields`, `customFieldValues`,
+`users` and `attachments`. It does **not** carry `comments`, and it does **not**
+carry `labels` or `lists`.
+
+So a card read on its own gives `listId` and a set of `labelId`s and no way to
+say which column it is in or what its labels are called. The names live only in
+the board payload (`GET /api/boards/:boardId`). `planka_get_card` resolves them
+with one board read cached for a minute, and treats a failure there as "no
+names", never as a failed read.
+
+## 10. Planka answers 404 where it means 403
+
+A 404 from Planka means one of three things, and the body does not distinguish
+them:
+
+1. the entity really does not exist;
+2. the ID is of the wrong kind (all IDs are strings of digits: a `labelId`
+   passed as a `listId` produces exactly this);
+3. **the agent user has no permission on it** — a 403 wearing a 404's clothes.
+
+Every 404 this server raises now names the kind of ID the path expected, keeps
+Planka's own message, and states the permission possibility.
+
 ## Related Planka 2.x traps
 
 ### Board-level card and label endpoints do not exist

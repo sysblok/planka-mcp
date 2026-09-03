@@ -14,6 +14,9 @@ import {
   UserSchema,
   CardLabelSchema,
   AttachmentSchema,
+  CardMembershipSchema,
+  CustomFieldSchema,
+  CustomFieldValueSchema,
 } from "./entities.js";
 
 // Generic response wrappers
@@ -76,7 +79,14 @@ export const BoardIncludedSchema = z
   })
   .passthrough(); // Allow additional fields
 
-// Included entities schema for card details
+// Included entities schema for card details.
+//
+// GET /api/cards/:id carries exactly these keys in Planka 2.2.x:
+//   cardMemberships, cardLabels, taskLists, tasks, customFieldGroups,
+//   customFields, customFieldValues, users, attachments
+// `comments` is NOT among them (they live at /api/cards/:id/comments) and
+// neither is `labels` — the label names come from the board. Both stay
+// declared because 1.x served them here and passthrough costs nothing.
 export const CardIncludedSchema = z
   .object({
     taskLists: z.array(TaskListSchema).optional(),
@@ -84,7 +94,10 @@ export const CardIncludedSchema = z
     comments: z.array(CommentSchema).optional(),
     labels: z.array(LabelSchema).optional(),
     cardLabels: z.array(CardLabelSchema).optional(),
+    cardMemberships: z.array(CardMembershipSchema).optional(),
     attachments: z.array(AttachmentSchema).optional(),
+    customFields: z.array(CustomFieldSchema).optional(),
+    customFieldValues: z.array(CustomFieldValueSchema).optional(),
     users: z.array(UserSchema).optional(),
   })
   .passthrough();

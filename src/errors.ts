@@ -23,8 +23,8 @@ export class PlankaAuthError extends PlankaError {
 }
 
 export class PlankaNotFoundError extends PlankaError {
-  constructor(resource: string, id: string) {
-    super(`${resource} not found: ${id}`, "NOT_FOUND", 404);
+  constructor(resource: string, id: string, hint?: string) {
+    super(`${resource} not found: ${id}${hint ? ` — ${hint}` : ""}`, "NOT_FOUND", 404);
     this.name = "PlankaNotFoundError";
   }
 }
@@ -63,6 +63,54 @@ export class PlankaNetworkError extends PlankaError {
  * @param body Response body (parsed JSON or null)
  * @param context Optional context (e.g., "GET /api/cards/123")
  */
+/**
+ * Which kind of ID the last path segment of a request is supposed to be.
+ * `/api/labels/123` -> labelId. Every Planka ID is a string of digits, so
+ * passing the wrong one is invisible until this 404 comes back.
+ */
+const ID_KIND_BY_COLLECTION: Record<string, string> = {
+  cards: "cardId",
+  lists: "listId",
+  boards: "boardId",
+  projects: "projectId",
+  labels: "labelId",
+  comments: "commentId",
+  tasks: "taskId",
+  "task-lists": "taskListId",
+  attachments: "attachmentId",
+  users: "userId",
+  "custom-field-groups": "customFieldGroupId",
+};
+
+/** The ID kind a context like "PATCH /api/labels/123" was addressing. */
+export function idKindFromContext(context?: string): string | undefined {
+  if (!context) return undefined;
+  const path = context.split(" ").pop() ?? context;
+  const match = /\/api\/([a-z-]+)\/([^/?]+)/.exec(path);
+  if (!match) return undefined;
+  return ID_KIND_BY_COLLECTION[match[1]];
+}
+
+/** What a 404 on this request most likely means, in the order to check it. */
+function notFoundHint(context?: string): string {
+  const kind = idKindFromContext(context);
+  const wrongType = kind
+    ? `the ID in this path has to be a ${kind}; every Planka ID is a string of digits, so a labelId passed as a listId (or a listId as a cardId) answers exactly this. `
+    : "";
+  return (
+    `${wrongType}Planka also answers 404 where it means 403: if the ID read fine a moment ago, the agent user is probably not a member of that board. ` +
+    `Confirm the ID with planka_board_summary or planka_get_structure before assuming the entity is gone.`
+  );
+}
+
+/**
+ * Factory function to create typed errors from API responses.
+ *
+ * Every branch answers "what should the agent do now?", not just "what broke".
+ * @param status HTTP status code
+ * @param body Response body (parsed JSON or null)
+ * @param context Optional context (e.g., "GET /api/cards/123")
+ */
 export function createPlankaError(
   status: number,
   body: unknown,
@@ -77,11 +125,26 @@ export function createPlankaError(
 
   switch (status) {
     case 401:
-      return new PlankaAuthError(message + contextSuffix);
+      // The client already retried once with a fresh token, so reaching here
+      // means the credentials themselves are the problem.
+      return new PlankaAuthError(
+        `${message}${contextSuffix}. Planka rejected the credentials even after a fresh login — ` +
+          "the token is renegotiated automatically, so this is not an expired session. " +
+          "Check PLANKA_API_KEY, or PLANKA_AGENT_EMAIL / PLANKA_AGENT_PASSWORD."
+      );
     case 403:
-      return new PlankaPermissionError(message + contextSuffix);
+      return new PlankaPermissionError(
+        `${message}${contextSuffix}. Forbidden: the agent user is probably not a member of this board, ` +
+          "or is a viewer where an editor is needed. Planka may also answer 404 for this same cause."
+      );
     case 404:
-      return new PlankaNotFoundError("Resource", context || "unknown");
+      // The body's own message is worth keeping: Planka distinguishes
+      // E_NOT_FOUND from "Card not found" and the like.
+      return new PlankaNotFoundError(
+        "Resource",
+        context || "unknown",
+        `${message !== "Unknown error" ? `Planka said "${message}". ` : ""}${notFoundHint(context)}`
+      );
     case 422:
       return new PlankaValidationError(message + contextSuffix, body);
     default:

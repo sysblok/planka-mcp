@@ -334,15 +334,47 @@ error, not a `success: true` with zero labels.
 
 ### `planka_get_card`
 
-Reads full card details, including tasks, comments, labels, and attachments.
-If the comments endpoint fails, the tool ERRORS: it never reports an empty
-comment list it could not actually read.
+Returns a **digest** by default, and the full record only when asked for. On a
+real card of the OmnicoreOS board the digest is **1.3 KB where the old
+everything-always answer was 13.2 KB** — a 90 % cut with nothing important lost.
 
 ```json
 {
   "cardId": "5234567890123456789"
 }
 ```
+
+The digest carries: `id`, `name`, `listId` **and `listName`**, `boardId`,
+`labels` (ids **with names**), `members`, `tasks` as `{done, total, lists:[…]}`
+— one entry per checklist, never flattened —, `attachmentsCount`,
+`commentsTotal` (Planka's own counter), `dueDate`, `isDueCompleted`, `isClosed`,
+`updatedAt` and `descriptionPreview` (first 200 chars, with `descriptionChars`
+and `descriptionTruncated`).
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `detail` | `"digest"` | `"full"` adds the whole description, every task item, the attachment list and the custom field values |
+| `withComments` | `0` | A number returns the N most recent comments; `"all"` pages through every one of them |
+| `descriptionChars` | `200` | Size of the description preview (max 2000). Ignored when `detail` is `"full"` |
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "detail": "full",
+  "withComments": 10
+}
+```
+
+Comments are **off by default**: they are the biggest and most variable part of
+a card, and most reads do not need them. When they are requested they come back
+oldest first — reading order — with `commentsReturned`, `commentsHasMore`,
+`nextBeforeId` and, for `"all"`, `commentsTruncated` when the card has more than
+the page ceiling.
+
+`listName` and the label names come from one board read, cached for a minute.
+If that read fails the names are simply absent; the card is never lost with
+them. If the comments endpoint fails, the tool ERRORS: it never reports an empty
+comment list it could not actually read.
 
 ### `planka_update_card`
 
@@ -533,13 +565,35 @@ The comment is re-read from the card before the tool reports success.
 
 ### `planka_get_comments`
 
-Reads the dedicated comment collection for one card.
+Reads the dedicated comment collection for one card, **oldest first**, one page
+at a time. Planka serves comments 50 at a time and ignores `?limit`/`?page`; the
+only cursor is `beforeId`, and this tool exposes it honestly.
 
 ```json
 {
-  "cardId": "5234567890123456789"
+  "cardId": "5234567890123456789",
+  "limit": 20,
+  "order": "asc"
 }
 ```
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `limit` | `20` | Comments to return, max 50 (Planka's page) |
+| `beforeId` | — | Cursor: returns comments **older** than that comment id |
+| `all` | `false` | Walks every page, up to 10 of them (500 comments) |
+| `order` | `"asc"` | `"asc"` oldest first (reading order), `"desc"` newest first |
+
+The answer carries `commentCount` (**what this response holds — never the card's
+total**), `hasMore`, `nextBeforeId` and, with `all`, `truncated` plus the reason.
+Continue by passing the `nextBeforeId` you were handed:
+
+```json
+{ "cardId": "5234567890123456789", "beforeId": "1034567890123456789" }
+```
+
+The card's real total comes from `planka_get_card` (`commentsTotal`), which is
+Planka's own counter.
 
 This does not rely on `included.comments`, which is empty in affected Planka 2.x
 responses even when the card has comments.

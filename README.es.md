@@ -237,7 +237,7 @@ Planka; no los adivines.
 | `planka_list_cards` | Lee una sola columna, paginada y sin descripciones por defecto |
 | `planka_find_cards` | Busca cards de un board por label, texto o columna |
 | `planka_create_card` | Crea una card y puede agregar tareas y labels |
-| `planka_get_card` | Lee el detalle completo de una card |
+| `planka_get_card` | Digest de una card; `detail: "full"` y `withComments` a pedido |
 | `planka_update_card` | Actualiza título, descripción, vencimiento o estado de completado |
 | `planka_move_card` | Mueve una card a otra lista o posición |
 | `planka_delete_card` | Borra una card permanentemente |
@@ -247,7 +247,7 @@ Planka; no los adivines.
 | `planka_manage_labels` | Crea, actualiza o borra labels del board |
 | `planka_set_card_labels` | Agrega o quita labels y verifica el estado final |
 | `planka_add_comment` | Agrega un comentario por el endpoint dedicado de Planka 2.x |
-| `planka_get_comments` | Lee comentarios por el endpoint dedicado |
+| `planka_get_comments` | Comentarios paginados (`limit`, `beforeId`, `all`) |
 | `planka_manage_comment` | Edita o borra un comentario existente |
 | `planka_manage_lists` | Crea, actualiza o borra listas del board |
 | `planka_add_attachment` | Sube un archivo local a una card y verifica que quedó |

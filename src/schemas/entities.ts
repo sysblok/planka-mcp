@@ -129,8 +129,64 @@ export const CardSchema = z.object({
    * never displayed.
    */
   listChangedAt: z.string().nullable().optional(),
+  /**
+   * Planka 2.x card-row fields the digest reads. All optional: older Planka
+   * releases and the leaner write echoes do not carry them.
+   *
+   * `isDueCompleted` is the 2.x spelling; `isDueDateCompleted` above is the
+   * legacy one. Read paths accept either.
+   */
+  isDueCompleted: z.boolean().nullable().optional(),
+  isClosed: z.boolean().nullable().optional(),
+  /** How many comments the card has — the ONLY total Planka reports. */
+  commentsTotal: z.number().nullable().optional(),
+  /** Timer object; shape is left open on purpose (read-only field). */
+  stopwatch: z
+    .object({
+      startedAt: z.string().nullable().optional(),
+      total: z.number().optional(),
+    })
+    .passthrough()
+    .nullable()
+    .optional(),
 });
 export type Card = z.infer<typeof CardSchema>;
+
+// Card membership (the junction that assigns a user to a card).
+export const CardMembershipSchema = z
+  .object({
+    id: z.string(),
+    cardId: z.string(),
+    userId: z.string(),
+  })
+  .passthrough();
+export type CardMembership = z.infer<typeof CardMembershipSchema>;
+
+// Custom field definition and its value on a card.
+// Enums are read as plain strings: closing them would make a future Planka
+// field type crash a read path.
+export const CustomFieldSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().nullable().optional(),
+    customFieldGroupId: z.string().nullable().optional(),
+    baseCustomFieldGroupId: z.string().nullable().optional(),
+    position: z.number().nullable().optional(),
+  })
+  .passthrough();
+export type CustomField = z.infer<typeof CustomFieldSchema>;
+
+export const CustomFieldValueSchema = z
+  .object({
+    id: z.string().optional(),
+    cardId: z.string(),
+    customFieldId: z.string(),
+    customFieldGroupId: z.string().nullable().optional(),
+    /** Planka calls it `content`, never `value`. */
+    content: z.string().nullable().optional(),
+  })
+  .passthrough();
+export type CustomFieldValue = z.infer<typeof CustomFieldValueSchema>;
 
 // TaskList (checklist container) schema - PLANKA 2.0
 export const TaskListSchema = z.object({
