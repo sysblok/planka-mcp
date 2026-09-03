@@ -1,8 +1,27 @@
 # Tools reference
 
 The server exposes exactly 24 tools. Tool results are MCP text content containing
-formatted JSON. On an expected Planka error, the result has `isError: true` and a
-human-readable message instead of a false success.
+JSON (minified — the indentation was pure token cost). On an expected Planka
+error, the result has `isError: true` and a human-readable message instead of a
+false success.
+
+## Every write is verified
+
+A `200` from Planka proves the request was accepted, not that the change is in
+the database. So every write re-reads the entity and reports what LANDED, never
+what was asked for. The response fields:
+
+| Field | Meaning |
+|---|---|
+| `verified: true` | A re-read confirmed the change. This is the only real success. |
+| `verified: false` + `isError` | The re-read contradicted the write, or the write could not be checked. Do not assume the write failed: read before retrying. |
+| `verificationError` | The re-read itself failed. The write may or may not have landed. |
+| `verificationUnavailable` | Verification was structurally impossible (a task or attachment whose card is unknown). Not an error, but not a proven success either. |
+| `partialFailure` | A follow-up step failed (`planka_create_card` only). The card id is always present anyway. |
+| `notLanded` | The fields, or the list, that the re-read says did not change. |
+
+Verification costs one extra read per write — a card read for cards, tasks,
+comments and attachments, and a board read for labels and lists.
 
 ## Before your first call
 
@@ -254,12 +273,21 @@ same tool.
 }
 ```
 
-Only `listId` and `name` are required. The result reports `tasksCreated`,
-`labelsAttached`, and any individual `labelErrors`.
+Only `listId` and `name` are required.
+
+The result reports `tasksRequested` / `tasksCreated` and `labelsRequested` /
+`labelsAttached` **counted from a re-read of the card**, plus `finalLabelIds`.
+If a follow-up step fails the card is still created: `card.id` always comes
+back, together with `partialFailure` (`tasks`, `tasksMissing`, `labelIds`) and
+`isError`. Never retry a `planka_create_card` that errored without reading the
+id it returned — that is how boards grow duplicates. Every label failing is an
+error, not a `success: true` with zero labels.
 
 ### `planka_get_card`
 
 Reads full card details, including tasks, comments, labels, and attachments.
+If the comments endpoint fails, the tool ERRORS: it never reports an empty
+comment list it could not actually read.
 
 ```json
 {
@@ -283,6 +311,10 @@ Updates only the fields present in the request.
 
 Use `null` to clear `description` or `dueDate`.
 
+Passing only `cardId` is rejected (`nothing to do`): an empty PATCH used to
+answer `success: true` without changing anything. The result re-reads the card
+and lists in `notLanded` any field that did not actually change.
+
 ### `planka_move_card`
 
 Moves a card to a list and optionally assigns its numeric position.
@@ -291,15 +323,22 @@ Moves a card to a list and optionally assigns its numeric position.
 {
   "cardId": "5234567890123456789",
   "listId": "6234567890123456789",
+  "boardId": "2234567890123456789",
   "position": 65536
 }
 ```
 
-If `position` is omitted, Planka decides the final position.
+If `position` is omitted, the card goes to the end of the list. `boardId` is
+only for moving a card to another board, and the `listId` must belong to it.
+
+The card is re-read: if it did not end up in the requested list the result is
+`verified: false` + `isError`, with the list it is actually in.
 
 ### `planka_delete_card`
 
-Permanently deletes a card.
+Permanently deletes a card, with its tasks, comments and attachments. The
+deletion is confirmed by re-reading the card: a 404 is the proof, and anything
+else comes back as `verified: false` + `isError`.
 
 ```json
 {
@@ -323,25 +362,36 @@ Adds one or more checklist tasks to a card.
 }
 ```
 
+The result reports `tasksCreated` counted from a re-read of the card, not from
+the request.
+
 ### `planka_update_task`
 
-Renames a task, changes completion, or does both.
+Renames a task, changes completion, or does both. Passing only `taskId` is
+rejected (`nothing to do`).
 
 ```json
 {
   "taskId": "7234567890123456789",
+  "cardId": "5234567890123456789",
   "name": "Add and run a regression test",
   "isCompleted": true
 }
 ```
 
+`cardId` is optional but strongly recommended: Planka has no GET for a single
+task, so the card is the only place the change can be verified. Without it the
+result carries `verificationUnavailable` instead of a proven success.
+
 ### `planka_delete_task`
 
-Deletes one checklist task.
+Deletes one checklist task. Same rule: pass `cardId` to have the deletion
+confirmed against the card.
 
 ```json
 {
-  "taskId": "7234567890123456789"
+  "taskId": "7234567890123456789",
+  "cardId": "5234567890123456789"
 }
 ```
 
@@ -383,9 +433,14 @@ Delete:
 }
 ```
 
-Writes validate colors against the Planka 2.x palette. Run
-`planka_get_board` to see colors already in use. Unknown colors are accepted on
-reads so one new upstream color cannot break the whole board response.
+`color` is a real JSON Schema `enum` of the 43 Planka 2.x colors, so a bad
+color is rejected before the call leaves the client. Unknown colors are still
+accepted on reads, so one new upstream color cannot break a board response.
+Run `planka_board_summary` to see the colors already in use.
+
+Every action is verified against a re-read of the board's labels: `update` with
+only `labelId` is rejected (`nothing to do`), and a `delete` whose label is
+still on the board comes back as `verified: false` + `isError`.
 
 ### `planka_set_card_labels`
 
@@ -424,6 +479,8 @@ endpoint.
   "text": "Verification complete: unit tests and the manual export both passed."
 }
 ```
+
+The comment is re-read from the card before the tool reports success.
 
 ### `planka_get_comments`
 
@@ -464,14 +521,25 @@ Delete:
 
 `text` is required for `update` and ignored for `delete`. Planka only lets the
 authenticated user modify comments that user wrote, so an agent can correct its
-own notes but not someone else's.
+own notes but not someone else's. Both actions re-read the card's comments
+before reporting: an edit that did not stick, or a comment still present after
+its delete, comes back as `verified: false` + `isError`.
 
 ## Lists
 
 ### `planka_manage_lists`
 
-Creates, updates, or deletes a board list. Creation sends an explicit Planka 2.x
-list `type`; it defaults to `active`.
+Creates, updates, or deletes a board list (column). Creation sends an explicit
+Planka 2.x list `type`; it defaults to `active`.
+
+> **DESTRUCTIVE — `delete` takes the cards with it.** Deleting a list deletes
+> every card inside it, and Planka does not ask. Move the cards out first (see
+> `planka_move_card`), or delete a column you created yourself. This cannot be
+> undone.
+
+Every action is verified against a re-read of the board: `update` with only
+`listId` is rejected (`nothing to do`), and a `delete` whose list is still on
+the board comes back as `verified: false` + `isError`.
 
 Create:
 
@@ -573,14 +641,19 @@ What comes back depends on the content type:
 
 ### `planka_delete_attachment`
 
-Permanently deletes one attachment. It is addressed by attachment ID alone, not
-by card.
+Permanently deletes one attachment.
 
 ```json
 {
-  "attachmentId": "1134567890123456789"
+  "attachmentId": "1134567890123456789",
+  "cardId": "5234567890123456789"
 }
 ```
+
+`cardId` is optional: Planka normally echoes the deleted attachment (which
+carries its card), and that is what makes the deletion verifiable. Pass it when
+you have it; if neither is available the result says
+`verificationUnavailable` rather than claiming success.
 
 ## When arguments are wrong
 

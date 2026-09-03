@@ -96,9 +96,11 @@ export async function uploadAttachment(
  */
 export async function deleteAttachment(
   input: AttachmentIdInput
-): Promise<void> {
+): Promise<Attachment | null> {
   const { attachmentId } = parseInput(AttachmentIdSchema, input);
-  await plankaClient.delete(`/api/attachments/${attachmentId}`);
+  const body = await plankaClient.delete(`/api/attachments/${attachmentId}`);
+  const parsed = AttachmentResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }
 
 /**

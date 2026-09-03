@@ -94,6 +94,44 @@ it did not see everything rather than pretending it did.
 
 Why it matters: an incomplete list looks exactly like a complete one.
 
+## 6. The `item` a write returns is not the state of the entity
+
+**Planka 2.x behavior:** a write answers `200` with the item it *thinks* it
+wrote, and that echo can disagree with the database.
+
+Measured against Planka 2.2.1:
+
+| Write | What it answers | What is true afterwards |
+|---|---|---|
+| `PATCH /api/cards/:id {isSubscribed:true}` | `200`, `item.isSubscribed: **null**` | re-reading the card says `true` |
+| `POST /api/lists/:id/cards` | `200` with `{item}` and **no `included`** | the card exists, but its tasks/labels are not in the answer |
+| `DELETE /api/cards/:id` | `200` with `{item}` of the deleted card | a later `GET` answers `404` JSON — that 404 is the proof |
+| `PATCH` with an empty body | `200` with the untouched item | nothing changed |
+
+So a `success: true` built out of the write's own response proves only that the
+request was accepted. The empty PATCH is the sharpest case: the tool reported a
+change that never happened.
+
+This fork writes and then **re-reads**, and reports `verified: true|false`
+(`src/operations/verify.ts`). The DELETE body is kept rather than discarded,
+because the deleted item carries the parent id (`cardId`, `boardId`) the
+confirmation read needs. Deletes are confirmed either by a 404 on the entity or
+by its absence from the parent.
+
+Corollary for tasks: there is no `GET /api/tasks/:id` in 2.x, so a task can only
+be verified through its card — which is why `planka_update_task` and
+`planka_delete_task` take an optional `cardId` and say
+`verificationUnavailable` when it is missing, instead of claiming success.
+
+## 7. Deleting a list deletes its cards
+
+**Planka 2.x behavior:** `DELETE /api/lists/:id` removes the column **and every
+card in it**, with no warning and no undo.
+
+The tool description and the docs now say so out loud, and `planka_manage_lists`
+confirms the deletion by re-reading the board. There is no server-side guard:
+move the cards out first.
+
 ## Related Planka 2.x traps
 
 ### Board-level card and label endpoints do not exist

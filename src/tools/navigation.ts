@@ -46,7 +46,7 @@ export const getStructureTool = {
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify(formatted, null, 2),
+          text: JSON.stringify(formatted),
         },
       ],
     };
@@ -160,7 +160,7 @@ export const getBoardTool = {
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify(formatted, null, 2),
+          text: JSON.stringify(formatted),
         },
       ],
     };

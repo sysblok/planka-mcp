@@ -20,7 +20,7 @@ import {
   UpdateLabelParamsInput,
 } from "../schemas/requests.js";
 import { LabelResponse, CardLabelResponse } from "../schemas/responses.js";
-import { getCard } from "./cards.js";
+import { getCardLight } from "./cards.js";
 
 /**
  * Create a new label on a board.
@@ -63,9 +63,11 @@ export async function updateLabel(
 /**
  * Delete a label.
  */
-export async function deleteLabel(input: LabelIdInput): Promise<void> {
+export async function deleteLabel(input: LabelIdInput): Promise<Label | null> {
   const { labelId } = parseInput(LabelIdSchema, input);
-  await plankaClient.delete(`/api/labels/${labelId}`);
+  const body = await plankaClient.delete(`/api/labels/${labelId}`);
+  const parsed = LabelResponse.safeParse(body);
+  return parsed.success ? parsed.data.item : null;
 }
 
 /**
@@ -141,7 +143,8 @@ export async function setCardLabels(
   const toAdd = addLabelIds ?? [];
   const toRemove = removeLabelIds ?? [];
 
-  const before = await getCard({ cardId });
+  // Light read: comparing label ids never needed the card's comments.
+  const before = await getCardLight({ cardId });
   const presentBefore = new Set(before.cardLabels.map((cl) => cl.labelId));
 
   const result: SetCardLabelsResult = {
@@ -188,7 +191,7 @@ export async function setCardLabels(
   }
 
   // Verify against the card itself: this is what makes the report trustworthy.
-  const after = await getCard({ cardId });
+  const after = await getCardLight({ cardId });
   const presentAfter = new Set(after.cardLabels.map((cl) => cl.labelId));
   result.finalLabelIds = [...presentAfter];
 

@@ -9,6 +9,7 @@ import {
   attachmentDownloadUrl,
 } from "../operations/attachments.js";
 import { Attachment } from "../schemas/entities.js";
+import { verifiedDelete, writeResult } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
 
 /** Cap for returning images inline to the model (base64 inflates ~33%). */
@@ -76,19 +77,10 @@ export const addAttachmentTool = {
       const after = await getAttachmentsForCard({ cardId: params.cardId });
       const verified = after.some((a) => a.id === attachment.id);
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              { success: verified, verified, attachment: summarize(attachment) },
-              null,
-              2
-            ),
-          },
-        ],
-        ...(verified ? {} : { isError: true }),
-      };
+      return writeResult(
+        { cardId: params.cardId, attachment: summarize(attachment) },
+        { verified }
+      );
     } catch (error) {
       if (error instanceof PlankaError) return errorResult(error.message);
       if (
@@ -130,9 +122,7 @@ export const getAttachmentsTool = {
                 cardId: params.cardId,
                 attachmentCount: attachments.length,
                 attachments: attachments.map(summarize),
-              },
-              null,
-              2
+              }
             ),
           },
         ],
@@ -236,9 +226,7 @@ export const viewAttachmentTool = {
               {
                 message: `Binary attachment (${mimeType}) — cannot render inline`,
                 attachment: summarize(attachment),
-              },
-              null,
-              2
+              }
             ),
           },
         ],
@@ -255,29 +243,47 @@ export const viewAttachmentTool = {
  */
 export const deleteAttachmentTool = {
   name: "planka_delete_attachment",
-  description: "Delete an attachment from a card.",
+  description:
+    "Delete an attachment. Confirmed by re-reading the card's attachments.",
   inputSchema: {
     type: "object" as const,
     properties: {
       attachmentId: { type: "string", description: "The attachment ID" },
+      cardId: {
+        type: "string",
+        description:
+          "The attachment's card. Optional — Planka usually echoes it on delete; it is what makes the deletion verifiable.",
+      },
     },
     required: ["attachmentId"],
   },
-  handler: async (params: { attachmentId: string }) => {
+  handler: async (params: { attachmentId: string; cardId?: string }) => {
     try {
-      await deleteAttachment({ attachmentId: params.attachmentId });
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              { success: true, message: `Attachment ${params.attachmentId} deleted` },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+      const deleted = await verifiedDelete({
+        del: () => deleteAttachment({ attachmentId: params.attachmentId }),
+        confirmGone: async (attachment) => {
+          // The delete body carries the cardId; the param is the fallback.
+          const cardId = params.cardId ?? attachment?.cardId;
+          if (!cardId) return null;
+          const after = await getAttachmentsForCard({ cardId });
+          return !after.some((a) => a.id === params.attachmentId);
+        },
+        unknownReason:
+          "Planka did not echo the deleted attachment and no cardId was passed, so the delete could not be confirmed",
+      });
+
+      return writeResult(
+        {
+          attachmentId: params.attachmentId,
+          ...(params.cardId ?? deleted.result?.cardId
+            ? { cardId: params.cardId ?? deleted.result?.cardId }
+            : {}),
+          message: deleted.verified
+            ? `Attachment ${params.attachmentId} deleted`
+            : `Attachment ${params.attachmentId} delete not confirmed`,
+        },
+        deleted
+      );
     } catch (error) {
       if (error instanceof PlankaError) return errorResult(error.message);
       throw error;

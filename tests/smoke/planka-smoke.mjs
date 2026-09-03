@@ -294,7 +294,11 @@ async function run() {
     color: "berry-red",
   });
   if (labelA?.label?.id) artifacts.labels.push(labelA.label.id);
-  check("planka_manage_labels create (A)", Boolean(labelA?.label?.id), labelA);
+  check(
+    "planka_manage_labels create (A) reports verified: true",
+    Boolean(labelA?.label?.id) && labelA.verified === true,
+    labelA
+  );
 
   const labelB = await json("planka_manage_labels", {
     action: "create",
@@ -303,7 +307,11 @@ async function run() {
     color: "lagoon-blue",
   });
   if (labelB?.label?.id) artifacts.labels.push(labelB.label.id);
-  check("planka_manage_labels create (B)", Boolean(labelB?.label?.id), labelB);
+  check(
+    "planka_manage_labels create (B) reports verified: true",
+    Boolean(labelB?.label?.id) && labelB.verified === true,
+    labelB
+  );
 
   if (!labelA?.label?.id || !labelB?.label?.id) {
     throw new Error("Without labels there is no smoke — stopping here");
@@ -316,8 +324,8 @@ async function run() {
     color: "pumpkin-orange",
   });
   check(
-    "planka_manage_labels update renames and recolors",
-    renamed?.label?.name === `${PREFIX} A2`,
+    "planka_manage_labels update renames and recolors, verified: true",
+    renamed?.label?.name === `${PREFIX} A2` && renamed.verified === true,
     renamed
   );
 
@@ -332,8 +340,11 @@ async function run() {
   const cardId = created?.card?.id;
   if (cardId) artifacts.cards.push(cardId);
   check(
-    "planka_create_card creates a card with 2 tasks and 1 label",
-    Boolean(cardId) && created.tasksCreated === 2 && created.labelsAttached === 1,
+    "planka_create_card creates a card with 2 tasks and 1 label, verified: true",
+    Boolean(cardId) &&
+      created.verified === true &&
+      created.tasksCreated === 2 &&
+      created.labelsAttached === 1,
     created
   );
   if (!cardId) throw new Error("Without a card there is no smoke — stopping here");
@@ -355,11 +366,15 @@ async function run() {
   );
   const taskId = details?.tasks?.[0]?.id;
 
-  const updated = await callTool("planka_update_card", {
+  const updated = await json("planka_update_card", {
     cardId,
     description: "description updated by the smoke test",
   });
-  check("planka_update_card updates the description", !updated.isError, updated.text);
+  check(
+    "planka_update_card updates the description, verified: true",
+    updated?.verified === true,
+    updated
+  );
 
   const reread = await json("planka_get_card", { cardId });
   check(
@@ -368,21 +383,34 @@ async function run() {
     reread?.card?.description
   );
 
-  const taskUpdated = await callTool("planka_update_task", {
+  const taskUpdated = await json("planka_update_task", {
     taskId,
+    cardId,
     isCompleted: true,
     name: "first (done)",
   });
-  check("planka_update_task completes and renames", !taskUpdated.isError, taskUpdated.text);
+  check(
+    "planka_update_task completes and renames, verified against the card",
+    taskUpdated?.verified === true && taskUpdated.task?.isCompleted === true,
+    taskUpdated
+  );
 
-  const taskAdded = await callTool("planka_create_tasks", {
+  const taskAdded = await json("planka_create_tasks", {
     cardId,
     tasks: ["third"],
   });
-  check("planka_create_tasks appends a task", !taskAdded.isError, taskAdded.text);
+  check(
+    "planka_create_tasks appends a task, verified: true",
+    taskAdded?.verified === true && taskAdded.tasksCreated === 1,
+    taskAdded
+  );
 
-  const taskDeleted = await callTool("planka_delete_task", { taskId });
-  check("planka_delete_task removes the task", !taskDeleted.isError, taskDeleted.text);
+  const taskDeleted = await json("planka_delete_task", { taskId, cardId });
+  check(
+    "planka_delete_task removes the task, verified against the card",
+    taskDeleted?.verified === true,
+    taskDeleted
+  );
 
   // --- labels on the card ---------------------------------------------------
   const swapped = await json("planka_set_card_labels", {
@@ -601,12 +629,80 @@ async function run() {
     noFilter.text
   );
 
-  const moved = await callTool("planka_move_card", {
+  const moved = await json("planka_move_card", {
     cardId,
     listId: list.id,
     position: 1,
   });
-  check("planka_move_card repositions inside the list", !moved.isError, moved.text);
+  check(
+    "planka_move_card repositions inside the list, verified: true",
+    moved?.verified === true,
+    moved
+  );
+
+  // A move BETWEEN columns is the real use of the tool: a temporary column is
+  // created for it, the card goes there and comes back, and the raw API is the
+  // judge in both directions.
+  const moveTarget = await json("planka_manage_lists", {
+    action: "create",
+    boardId,
+    name: `${PREFIX} move target`,
+  });
+  if (moveTarget?.list?.id) artifacts.lists.push(moveTarget.list.id);
+  check(
+    "planka_manage_lists create (move target) reports verified: true",
+    Boolean(moveTarget?.list?.id) && moveTarget.verified === true,
+    moveTarget
+  );
+
+  if (moveTarget?.list?.id) {
+    const movedAcross = await json("planka_move_card", {
+      cardId,
+      listId: moveTarget.list.id,
+    });
+    check(
+      "planka_move_card moves the card to ANOTHER column, verified: true",
+      movedAcross?.verified === true &&
+        movedAcross.card?.listId === moveTarget.list.id,
+      movedAcross
+    );
+
+    const rawAfterMove = await rawBoard();
+    check(
+      "the raw API confirms the card changed column",
+      rawAfterMove.cards.find((item) => item.id === cardId)?.listId ===
+        moveTarget.list.id,
+      rawAfterMove.cards.find((item) => item.id === cardId)?.listId
+    );
+
+    const movedBack = await json("planka_move_card", {
+      cardId,
+      listId: list.id,
+    });
+    check(
+      "planka_move_card brings it back to the original column, verified: true",
+      movedBack?.verified === true && movedBack.card?.listId === list.id,
+      movedBack
+    );
+
+    const rawAfterBack = await rawBoard();
+    check(
+      "the raw API confirms the card is back (and was NOT deleted with the column)",
+      rawAfterBack.cards.find((item) => item.id === cardId)?.listId === list.id,
+      rawAfterBack.cards.find((item) => item.id === cardId)?.listId
+    );
+
+    const droppedTarget = await json("planka_manage_lists", {
+      action: "delete",
+      listId: moveTarget.list.id,
+    });
+    if (droppedTarget?.verified === true) forget("lists", moveTarget.list.id);
+    check(
+      "planka_manage_lists delete removes the temporary column, verified: true",
+      droppedTarget?.verified === true,
+      droppedTarget
+    );
+  }
 
   // --- comments: a 0 has to be a REAL 0 -------------------------------------
   const emptyMcp = await json("planka_get_comments", { cardId });
@@ -622,7 +718,11 @@ async function run() {
     text: "smoke: original comment",
   });
   const commentId = addedComment?.comment?.id;
-  check("planka_add_comment creates the comment", Boolean(commentId), addedComment);
+  check(
+    "planka_add_comment creates the comment, verified: true",
+    Boolean(commentId) && addedComment.verified === true,
+    addedComment
+  );
 
   const readMcp = await json("planka_get_comments", { cardId });
   check(
@@ -647,12 +747,16 @@ async function run() {
     readMcp?.comments?.[0]
   );
 
-  const editedComment = await callTool("planka_manage_comment", {
+  const editedComment = await json("planka_manage_comment", {
     action: "update",
     commentId,
     text: "smoke: edited comment",
   });
-  check("planka_manage_comment update", !editedComment.isError, editedComment.text);
+  check(
+    "planka_manage_comment update, verified: true",
+    editedComment?.verified === true,
+    editedComment
+  );
 
   const afterEditMcp = await json("planka_get_comments", { cardId });
   const afterEditRaw = await api.getComments(cardId);
@@ -663,11 +767,15 @@ async function run() {
     `mcp=${afterEditMcp?.comments[0].text} · raw=${afterEditRaw.items[0]?.text}`
   );
 
-  const deletedComment = await callTool("planka_manage_comment", {
+  const deletedComment = await json("planka_manage_comment", {
     action: "delete",
     commentId,
   });
-  check("planka_manage_comment delete", !deletedComment.isError, deletedComment.text);
+  check(
+    "planka_manage_comment delete, verified: true",
+    deletedComment?.verified === true,
+    deletedComment
+  );
 
   const afterDeleteMcp = await json("planka_get_comments", { cardId });
   const afterDeleteRaw = await api.getComments(cardId);
@@ -726,14 +834,15 @@ async function run() {
     viewed.text
   );
 
-  const deletedAttachment = await callTool("planka_delete_attachment", {
+  const deletedAttachment = await json("planka_delete_attachment", {
     attachmentId,
+    cardId,
   });
-  if (!deletedAttachment.isError) forget("attachments", attachmentId);
+  if (deletedAttachment?.verified === true) forget("attachments", attachmentId);
   check(
-    "planka_delete_attachment removes the attachment",
-    !deletedAttachment.isError,
-    deletedAttachment.text
+    "planka_delete_attachment removes the attachment, verified: true",
+    deletedAttachment?.verified === true,
+    deletedAttachment
   );
 
   const afterAttachmentDelete = await json("planka_get_attachments", { cardId });
@@ -750,7 +859,11 @@ async function run() {
     name: `${PREFIX} temporary list`,
   });
   if (tempList?.list?.id) artifacts.lists.push(tempList.list.id);
-  check("planka_manage_lists create", Boolean(tempList?.list?.id), tempList);
+  check(
+    "planka_manage_lists create, verified: true",
+    Boolean(tempList?.list?.id) && tempList.verified === true,
+    tempList
+  );
 
   const renamedList = await json("planka_manage_lists", {
     action: "update",
@@ -758,17 +871,22 @@ async function run() {
     name: `${PREFIX} renamed list`,
   });
   check(
-    "planka_manage_lists update renames",
-    renamedList?.list?.name === `${PREFIX} renamed list`,
+    "planka_manage_lists update renames, verified: true",
+    renamedList?.list?.name === `${PREFIX} renamed list` &&
+      renamedList.verified === true,
     renamedList
   );
 
-  const deletedList = await callTool("planka_manage_lists", {
+  const deletedList = await json("planka_manage_lists", {
     action: "delete",
     listId: tempList.list.id,
   });
-  if (!deletedList.isError) forget("lists", tempList.list.id);
-  check("planka_manage_lists delete", !deletedList.isError, deletedList.text);
+  if (deletedList?.verified === true) forget("lists", tempList.list.id);
+  check(
+    "planka_manage_lists delete, verified: true",
+    deletedList?.verified === true,
+    deletedList
+  );
 
   // --- actionable error paths ----------------------------------------------
   const errMissing = await callTool("planka_add_comment", { cardId });
@@ -856,9 +974,13 @@ async function run() {
   );
 
   // --- teardown, verified ---------------------------------------------------
-  const deletedCard = await callTool("planka_delete_card", { cardId });
-  if (!deletedCard.isError) forget("cards", cardId);
-  check("planka_delete_card deletes the card", !deletedCard.isError, deletedCard.text);
+  const deletedCard = await json("planka_delete_card", { cardId });
+  if (deletedCard?.verified === true) forget("cards", cardId);
+  check(
+    "planka_delete_card deletes the card, verified: true",
+    deletedCard?.verified === true,
+    deletedCard
+  );
 
   state = await rawBoard();
   check(
@@ -868,12 +990,16 @@ async function run() {
   );
 
   for (const labelId of [labelA.label.id, labelB.label.id]) {
-    const deletedLabel = await callTool("planka_manage_labels", {
+    const deletedLabel = await json("planka_manage_labels", {
       action: "delete",
       labelId,
     });
-    if (!deletedLabel.isError) forget("labels", labelId);
-    check(`planka_manage_labels delete (${labelId})`, !deletedLabel.isError, deletedLabel.text);
+    if (deletedLabel?.verified === true) forget("labels", labelId);
+    check(
+      `planka_manage_labels delete (${labelId}), verified: true`,
+      deletedLabel?.verified === true,
+      deletedLabel
+    );
   }
 
   state = await rawBoard();
