@@ -9,6 +9,10 @@ import { commentTools } from "./comments.js";
 import { listTools } from "./lists.js";
 import { attachmentTools } from "./attachments.js";
 import { queryTools } from "./queries.js";
+import { activityTools } from "./activity.js";
+import { memberTools } from "./members.js";
+import { userTools } from "./users.js";
+import { cardOpsTools } from "./card-ops.js";
 import { toolPresentation } from "./annotations.js";
 import {
   AccessPolicy,
@@ -29,6 +33,10 @@ export const allTools = [
   ...commentTools,
   ...listTools,
   ...attachmentTools,
+  ...activityTools,
+  ...memberTools,
+  ...userTools,
+  ...cardOpsTools,
 ];
 
 /**
@@ -175,6 +183,10 @@ export { commentTools } from "./comments.js";
 export { listTools } from "./lists.js";
 export { attachmentTools } from "./attachments.js";
 export { queryTools } from "./queries.js";
+export { activityTools } from "./activity.js";
+export { memberTools } from "./members.js";
+export { userTools } from "./users.js";
+export { cardOpsTools } from "./card-ops.js";
 export {
   toolPresentation,
   TOOLS_REQUIRING_USER_INTERACTION,

@@ -174,6 +174,38 @@ export const toolPresentation: Record<string, ToolPresentation> = {
     annotations: DESTRUCTIVE,
     _meta: { ...NEEDS_CONFIRMATION },
   },
+
+  // --- activity -------------------------------------------------------------
+  planka_card_history: { title: "Card history", annotations: READ },
+  planka_board_activity: { title: "Board activity", annotations: READ },
+
+  // --- members --------------------------------------------------------------
+  // The remove branch unassigns people; converges on the same final set.
+  planka_set_card_members: {
+    title: "Set card members",
+    annotations: { ...UPDATE, destructiveHint: true },
+  },
+
+  // --- identity -------------------------------------------------------------
+  planka_list_users: { title: "List users", annotations: READ },
+  planka_whoami: { title: "Who am I", annotations: READ },
+
+  // --- card operations ------------------------------------------------------
+  // Copying twice leaves two copies.
+  planka_duplicate_card: { title: "Duplicate card", annotations: CREATE },
+  // Hides the card from the board. Reversible with restoreToListId, but a human
+  // should know it is about to disappear from every column.
+  planka_archive_card: {
+    title: "Archive or restore card",
+    annotations: DESTRUCTIVE,
+    _meta: { ...NEEDS_CONFIRMATION },
+  },
+  // Empties a whole column in one call: the most far-reaching write here.
+  planka_move_list_cards: {
+    title: "Move all cards between columns",
+    annotations: { ...UPDATE, destructiveHint: true },
+    _meta: { ...NEEDS_CONFIRMATION },
+  },
 };
 
 /** Tools whose `_meta` must force a user prompt. Asserted by the test suite. */
@@ -184,4 +216,6 @@ export const TOOLS_REQUIRING_USER_INTERACTION = [
   "planka_manage_comment",
   "planka_manage_lists",
   "planka_manage_labels",
+  "planka_archive_card",
+  "planka_move_list_cards",
 ] as const;

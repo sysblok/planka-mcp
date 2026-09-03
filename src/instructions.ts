@@ -27,6 +27,8 @@ Reads return digests, not full records: descriptions are off unless you ask (wit
 
 Text search (query/search) matches card name and description, case- and accent-insensitive. Several tokens are ANDed, all must match. A leading "/" makes the rest a regular expression.
 
+Resuming work you did not start: planka_board_activity says what moved on the board and who moved it since a given date. Planka logs only card creation, moves, member changes and task completion, so comments and edits leave no trace there.
+
 Writes re-read what they touched and report what actually landed. Trust the verified and finalLabelIds fields of the response, not the arguments you sent; a request that returns without them did not confirm anything.
 
 Planka answers 404 where it means 403. A "not found" on a write, with an ID that read fine a moment ago, is almost always a missing permission for the agent user, not a wrong ID.`;
