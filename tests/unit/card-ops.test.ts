@@ -14,6 +14,7 @@ vi.mock("../../src/client.js", async (importOriginal) => {
   };
 });
 
+import { PlankaError } from "../../src/errors.js";
 import {
   archiveCardTool,
   duplicateCardTool,
@@ -216,37 +217,95 @@ describe("planka_move_list_cards", () => {
     mocks.patch.mockReset();
   });
 
-  it("counts both columns before and after", async () => {
+  /** A list show: type, board, and the cards it holds. */
+  function listShow(type: string, count: number, boardId = "board-1") {
+    return {
+      item: { id: "list-x", type, boardId },
+      included: {
+        cards: Array.from({ length: count }, (_, index) => ({
+          id: `c-${index}`,
+          position: (index + 1) * 65536,
+        })),
+      },
+    };
+  }
+
+  it("moves card by card between ordinary columns, never through the bulk endpoint", async () => {
+    // Planka's /move-cards only accepts closed -> archive and answers 403
+    // "Not enough rights" for an active -> active call. Calling it here is the
+    // regression this test exists for.
     mocks.get
-      .mockResolvedValueOnce(listWith(3)) // from, before
-      .mockResolvedValueOnce(listWith(5)) // to, before
-      .mockResolvedValueOnce(listWith(0)) // from, after
-      .mockResolvedValueOnce(listWith(8)); // to, after
-    mocks.post.mockResolvedValue({ item: {}, included: {} });
+      .mockResolvedValueOnce(listShow("active", 3)) // from, before
+      .mockResolvedValueOnce(listShow("active", 5)) // to, before
+      .mockResolvedValueOnce(listShow("active", 0)) // from, after
+      .mockResolvedValueOnce(listShow("active", 8)); // to, after
+    mocks.patch.mockResolvedValue({ item: {} });
 
     const payload = parse(
       await moveListCardsTool.handler({ fromListId: "list-a", toListId: "list-b" })
     );
 
-    expect(mocks.post).toHaveBeenCalledWith("/api/lists/list-a/move-cards", {
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.patch).toHaveBeenCalledTimes(3);
+    // The position travels so the relative order survives the move.
+    expect(mocks.patch).toHaveBeenNthCalledWith(1, "/api/cards/c-0", {
       listId: "list-b",
+      position: 65536,
     });
     expect(payload).toMatchObject({
       success: true,
       verified: true,
+      strategy: "perCard",
       moved: 3,
       fromRemaining: 0,
       toTotal: 8,
     });
   });
 
+  it("uses Planka's bulk endpoint for the one case it accepts: closed to archive", async () => {
+    mocks.get
+      .mockResolvedValueOnce(listShow("closed", 2)) // from, before
+      .mockRejectedValueOnce(new PlankaError("List not found", "E_NOT_FOUND", 404)) // archive: unreadable
+      .mockResolvedValueOnce({
+        // board show, to resolve the archive id
+        item: { id: "board-1" },
+        included: {
+          lists: [
+            { id: "list-a", name: "Done", type: "closed" },
+            { id: ARCHIVE_ID, name: null, type: "archive" },
+          ],
+        },
+      })
+      .mockResolvedValueOnce(listShow("closed", 0)) // from, after
+      .mockRejectedValueOnce(new PlankaError("List not found", "E_NOT_FOUND", 404)); // archive, after
+
+    mocks.post.mockResolvedValue({ item: {}, included: { cards: [], actions: [] } });
+
+    const payload = parse(
+      await moveListCardsTool.handler({ fromListId: "list-a", toListId: ARCHIVE_ID })
+    );
+
+    expect(mocks.post).toHaveBeenCalledWith("/api/lists/list-a/move-cards", {
+      listId: ARCHIVE_ID,
+    });
+    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(payload).toMatchObject({
+      verified: true,
+      strategy: "bulk",
+      moved: 2,
+      fromRemaining: 0,
+      toTotal: null,
+    });
+    expect(payload.toCountUnavailable).toMatch(/cannot be read/);
+  });
+
   it("reports verified: false when the counts do not add up", async () => {
     mocks.get
-      .mockResolvedValueOnce(listWith(3))
-      .mockResolvedValueOnce(listWith(5))
-      .mockResolvedValueOnce(listWith(1)) // one card stayed behind
-      .mockResolvedValueOnce(listWith(7));
-    mocks.post.mockResolvedValue({ item: {}, included: {} });
+      .mockResolvedValueOnce(listShow("active", 3))
+      .mockResolvedValueOnce(listShow("active", 5))
+      .mockResolvedValueOnce(listShow("active", 1)) // one card stayed behind
+      .mockResolvedValueOnce(listShow("active", 7));
+    mocks.patch.mockResolvedValue({ item: {} });
 
     const result = await moveListCardsTool.handler({
       fromListId: "list-a",
@@ -259,15 +318,54 @@ describe("planka_move_list_cards", () => {
     expect(payload).toMatchObject({ moved: 2, fromRemaining: 1, expectedTotal: 8 });
   });
 
+  it("names the card that refused to move instead of shrinking the success", async () => {
+    mocks.get
+      .mockResolvedValueOnce(listShow("active", 2))
+      .mockResolvedValueOnce(listShow("active", 0))
+      .mockResolvedValueOnce(listShow("active", 1))
+      .mockResolvedValueOnce(listShow("active", 1));
+    mocks.patch
+      .mockResolvedValueOnce({ item: {} })
+      .mockRejectedValueOnce(new PlankaError("Card not found", "E_NOT_FOUND", 404));
+
+    const result = await moveListCardsTool.handler({
+      fromListId: "list-a",
+      toListId: "list-b",
+    });
+    const payload = parse(result);
+
+    expect(result.isError).toBe(true);
+    expect(payload.failed).toEqual([
+      { cardId: "c-1", reason: expect.stringContaining("Card not found") },
+    ]);
+  });
+
   it("does not call Planka for an empty column", async () => {
-    mocks.get.mockResolvedValueOnce(listWith(0)).mockResolvedValueOnce(listWith(4));
+    mocks.get
+      .mockResolvedValueOnce(listShow("active", 0))
+      .mockResolvedValueOnce(listShow("active", 4));
 
     const payload = parse(
       await moveListCardsTool.handler({ fromListId: "list-a", toListId: "list-b" })
     );
 
     expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.patch).not.toHaveBeenCalled();
     expect(payload).toMatchObject({ verified: true, moved: 0, toTotal: 4 });
+  });
+
+  it("explains a source column Planka will not show", async () => {
+    mocks.get.mockRejectedValueOnce(
+      new PlankaError("List not found", "E_NOT_FOUND", 404)
+    );
+
+    const result = await moveListCardsTool.handler({
+      fromListId: ARCHIVE_ID,
+      toListId: "list-b",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/archive and trash/);
   });
 
   it("refuses moving a column into itself", async () => {

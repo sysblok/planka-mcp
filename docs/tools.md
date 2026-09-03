@@ -1027,8 +1027,7 @@ again: it answers `alreadyArchived: true` and names the column it came from.
 
 ### `planka_move_list_cards`
 
-Moves **every** card of one column into another, through Planka's own bulk
-endpoint — one call instead of N patches and N chances to stop halfway.
+Moves **every** card of one column into another.
 
 ```json
 {
@@ -1038,8 +1037,23 @@ endpoint — one call instead of N patches and N chances to stop halfway.
 }
 ```
 
-Both columns are counted before and after, and the tool only claims success
-when the numbers add up:
+Planka has a bulk endpoint, `POST /api/lists/:id/move-cards`, and it is far
+narrower than its name: `server/api/controllers/lists/move-cards.js` in 2.2.1
+refuses everything except archiving a whole closed column.
+
+```js
+if (list.type !== List.Types.CLOSED)      throw NOT_ENOUGH_RIGHTS;   // 403
+if (nextList.type !== List.Types.ARCHIVE) throw LIST_NOT_FOUND;      // 404
+```
+
+So an ordinary column-to-column call comes back **403 "Not enough rights"**,
+which reads like a permission problem and is not one. This tool uses the bulk
+call for the single case it accepts and moves card by card everywhere else, one
+`PATCH` each, keeping each card's position so the relative order survives.
+`strategy` says which path ran: `"bulk"` or `"perCard"`.
+
+Both columns are counted before and after, and success is only claimed when the
+numbers add up:
 
 ```json
 {
@@ -1047,6 +1061,7 @@ when the numbers add up:
   "verified": true,
   "fromListId": "3234567890123456789",
   "toListId": "4234567890123456789",
+  "strategy": "perCard",
   "moved": 3,
   "fromRemaining": 0,
   "toTotal": 8,
@@ -1054,10 +1069,18 @@ when the numbers add up:
 }
 ```
 
+| Field | Meaning |
+|---|---|
+| `strategy` | `bulk` (closed → archive, one call) or `perCard` (one PATCH per card) |
+| `moved` | Cards that actually left the source column |
+| `failed` | Cards whose PATCH was rejected, with the reason. Present only on a partial move |
+| `toCountUnavailable` | The destination is the archive, which Planka will not show; only the source could be counted |
+
 `verified: false` with `isError` means the counts disagree — read both columns
-before retrying. An already empty source column is not an error: it answers
-`moved: 0`. `PLANKA_PROTECTED_LIST_IDS` guards both ends, so a protected column
-can be neither filled nor drained.
+before retrying. An already empty source is not an error (`moved: 0`). A source
+column Planka refuses to show (`archive`, `trash`, or an id that does not exist)
+is rejected with a message that says so. `PLANKA_PROTECTED_LIST_IDS` guards both
+ends, so a protected column can be neither filled nor drained.
 
 ## When arguments are wrong
 
