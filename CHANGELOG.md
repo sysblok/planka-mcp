@@ -2,6 +2,64 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Added
+
+- `src/operations/verify.ts`: `verifiedWrite`, `verifiedDelete` and `goneOn404`,
+  the single implementation of "write, re-read, report what landed". Until now
+  the pattern lived hand-copied in two places and was missing from eleven writes.
+- Every write reports `verified: true|false`, and `isError` when the re-read
+  contradicts it or could not be made. New response fields: `verificationError`,
+  `verificationUnavailable`, `partialFailure`, `notLanded`.
+- `planka_move_card` accepts `boardId`, so a card can finally be moved between
+  boards (the operation supported it; the tool did not expose it).
+- `planka_update_task`, `planka_delete_task` and `planka_delete_attachment`
+  accept an optional `cardId`, which is what makes their verification possible
+  (Planka 2.x has no GET for a single task).
+- `getCardLight()`: a card read without its comments, used for verification and
+  by `planka_set_card_labels`, which was pulling every comment of a card twice
+  only to compare label ids.
+- 19 unit tests for the false greens: comments endpoint failing, partial task
+  creation, deletes that do not delete, no-op PATCHes, a move that did not move,
+  and labels that never attached. Suite: 45 → 64 tests.
+- Smoke: a REAL move between two columns (temporary column created, card moved
+  there and back, both directions cross-checked against the raw API) and
+  `verified: true` assertions on every write.
+
+### Changed
+
+- **A `200` is no longer a success.** `planka_create_card`, `planka_update_card`,
+  `planka_move_card`, `planka_delete_card`, `planka_create_tasks`,
+  `planka_update_task`, `planka_delete_task`, `planka_manage_labels`,
+  `planka_add_comment`, `planka_manage_comment`, `planka_manage_lists` and
+  `planka_delete_attachment` now re-read before reporting.
+- `planka_create_card` counts the tasks and labels **that are on the card**, not
+  the ones requested, always returns `card.id` (even when a follow-up step
+  fails, so a retry does not duplicate the card), and errors when every
+  requested label failed to attach.
+- `planka_update_card`, `planka_update_task`, `planka_manage_labels update` and
+  `planka_manage_lists update` reject a request carrying only an id
+  (`nothing to do`) instead of sending an empty PATCH and reporting success.
+- `planka_manage_lists` says in its description and in the docs that deleting a
+  list deletes every card in it.
+- `PlankaClient.delete()` returns the response body instead of `void`: Planka
+  2.x echoes the deleted item, and its parent id is what makes the confirmation
+  read possible.
+- Label `color` is a real JSON Schema `enum` of the 43 colors instead of a
+  sentence in the description, so the client rejects a bad color before the
+  call. (Measured: 599 chars against 580 — this is a correctness win, not a
+  token saving.)
+- Tool payloads are serialized without indentation (`JSON.stringify(x)`),
+  27–46 % fewer characters on the read-heavy tools at zero information cost.
+
+### Fixed
+
+- `planka_get_card` no longer swallows a failing comments endpoint into
+  `comments: []`. A 403, a timeout or an HTML answer now surfaces as an error:
+  "this card has no comments" and "I could not read them" are different facts,
+  and on a board whose memory lives in the comments the difference is expensive.
+
 ## [0.2.0] - 2026-08-24
 
 ### Added
