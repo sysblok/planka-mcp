@@ -25,6 +25,7 @@ describe("parsePolicy", () => {
       allowedProjectIds: null,
       readOnly: false,
       disabledTools: [],
+      hideDeprecated: false,
       protectedListIds: [],
       summaryHighlightLabel: null,
       summaryDecisionLists: null,
@@ -197,7 +198,7 @@ describe("isToolVisible / toolBlockedReason", () => {
       .map((t) => t.name)
       .filter((name) => !WRITE_TOOL_NAMES.has(name));
     expect(WRITE_TOOL_NAMES.size + reads.length).toBe(allTools.length);
-    expect(WRITE_TOOL_NAMES.size).toBe(18);
+    expect(WRITE_TOOL_NAMES.size).toBe(27);
   });
 });
 

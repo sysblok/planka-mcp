@@ -6,6 +6,30 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **The three `manage_*` tools are split, one tool per action: 32 → 41.**
+  `planka_create_label` / `planka_update_label` / `planka_delete_label`,
+  `planka_create_list` / `planka_update_list` / `planka_delete_list`, and
+  `planka_create_comment` / `planka_update_comment` / `planka_delete_comment`.
+  Each declares a real `required` in its JSON Schema, so the client refuses an
+  incomplete call before it leaves and the server's generic presence check does
+  the rest. The `action` enum could not express "boardId is required when
+  action=create", which is why every `manage_*` carried 20-40 lines of
+  hand-written guards — and a forgotten branch is exactly how an `update`
+  carrying only an id shipped an empty `PATCH` that Planka answered `200` to.
+  All nine reuse the existing operations and `verifiedWrite`/`verifiedDelete`,
+  and answer with the same digest (`{id, name, …, verified}`) as before.
+  `planka_delete_list` says in its own description that it deletes every card in
+  the column.
+- `PLANKA_HIDE_DEPRECATED=true` drops the deprecated tools from `tools/list`:
+  `planka_manage_labels`, `planka_manage_lists`, `planka_manage_comment`,
+  `planka_add_comment` and `planka_get_board`. Measured on `tools/list`:
+  **34 444 → 29 788 characters** (−4 656, −13.5 %). They remain callable, so a
+  model working from a cached list or from a skill that names one still gets the
+  real behaviour instead of "unknown tool". Default `false`.
+- 35 unit tests for the split (`tests/unit/split-manage.test.ts`): the happy path
+  of each new tool against a mocked re-read, the `nothing to do` guard, a delete
+  that did not delete, `required` enforcement per tool, every alias dispatching,
+  and the `PLANKA_HIDE_DEPRECATED` filter. Suite: 189 → 224 tests.
 - **`planka_get_card` is a digest with detail on demand.** By default it returns
   counts and names instead of the whole record: `listName` next to `listId`,
   label **names** with their ids, `members`, tasks as `{done, total, lists:[…]}`
@@ -147,6 +171,18 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **The old names survive as deprecated aliases.** `planka_manage_labels`,
+  `planka_manage_lists`, `planka_manage_comment` and `planka_add_comment` keep
+  working unchanged; each is a ten-line dispatcher that routes `action` to the
+  tool that replaced it and borrows that tool's `required` (so
+  `manage_labels action:update` with no `labelId` is refused with a message
+  naming `planka_update_label`). Their descriptions open with `DEPRECATED:`.
+- The nine new tools are in `WRITE_TOOL_NAMES` (18 → 27), so `PLANKA_READ_ONLY`
+  hides them, and in `src/tools/annotations.ts`; the three `delete_*` carry
+  `anthropic/requiresUserInteraction`.
+- The smoke suite drives labels, lists and comments through the new tools and
+  keeps one check per alias, plus one that the alias borrows its target's
+  `required`.
 - **`planka_get_card` no longer returns comments by default.** They were the
   biggest and least predictable part of the answer and most reads do not need
   them; `withComments` brings them back, and the digest always says how many

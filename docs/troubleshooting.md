@@ -80,7 +80,7 @@ with a body containing `userId` and `role: "editor"`.
 **Cause:** Planka 2.x requires `type` as well as `name` and `position`. Older MCP
 builds omit it.
 
-**Fix:** use this fork. `planka_manage_lists` sends `type: "active"` by default and
+**Fix:** use this fork. `planka_create_list` sends `type: "active"` by default and
 also accepts `closed`.
 
 ## “The MCP tools do not appear in Claude Code”

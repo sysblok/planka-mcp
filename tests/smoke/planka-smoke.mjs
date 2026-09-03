@@ -37,7 +37,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { PlankaApi, boardEntities } from "../../scripts/lib/planka-api.mjs";
 
-const EXPECTED_TOOL_COUNT = 32;
+const EXPECTED_TOOL_COUNT = 41;
 
 /** Prefix on every artifact this test creates; the initial sweep looks for it. */
 const PREFIX = "[smoke planka-mcp]";
@@ -287,19 +287,19 @@ async function run() {
   const boardText = JSON.stringify(mcpBoard);
 
   // --- labels the scratch card will carry -----------------------------------
-  const labelA = await json("planka_manage_labels", {
-    action: "create",
+  const labelA = await json("planka_create_label", {
     boardId,
     name: `${PREFIX} A`,
     color: "berry-red",
   });
   if (labelA?.label?.id) artifacts.labels.push(labelA.label.id);
   check(
-    "planka_manage_labels create (A) reports verified: true",
+    "planka_create_label (A) reports verified: true",
     Boolean(labelA?.label?.id) && labelA.verified === true,
     labelA
   );
 
+  // The one deprecated-alias check for labels: the old name must still route.
   const labelB = await json("planka_manage_labels", {
     action: "create",
     boardId,
@@ -308,7 +308,7 @@ async function run() {
   });
   if (labelB?.label?.id) artifacts.labels.push(labelB.label.id);
   check(
-    "planka_manage_labels create (B) reports verified: true",
+    "planka_manage_labels (DEPRECATED alias) still creates, verified: true",
     Boolean(labelB?.label?.id) && labelB.verified === true,
     labelB
   );
@@ -317,14 +317,13 @@ async function run() {
     throw new Error("Without labels there is no smoke — stopping here");
   }
 
-  const renamed = await json("planka_manage_labels", {
-    action: "update",
+  const renamed = await json("planka_update_label", {
     labelId: labelA.label.id,
     name: `${PREFIX} A2`,
     color: "pumpkin-orange",
   });
   check(
-    "planka_manage_labels update renames and recolors, verified: true",
+    "planka_update_label renames and recolors, verified: true",
     renamed?.label?.name === `${PREFIX} A2` && renamed.verified === true,
     renamed
   );
@@ -692,14 +691,13 @@ async function run() {
   // A move BETWEEN columns is the real use of the tool: a temporary column is
   // created for it, the card goes there and comes back, and the raw API is the
   // judge in both directions.
-  const moveTarget = await json("planka_manage_lists", {
-    action: "create",
+  const moveTarget = await json("planka_create_list", {
     boardId,
     name: `${PREFIX} move target`,
   });
   if (moveTarget?.list?.id) artifacts.lists.push(moveTarget.list.id);
   check(
-    "planka_manage_lists create (move target) reports verified: true",
+    "planka_create_list (move target) reports verified: true",
     Boolean(moveTarget?.list?.id) && moveTarget.verified === true,
     moveTarget
   );
@@ -741,13 +739,12 @@ async function run() {
       rawAfterBack.cards.find((item) => item.id === cardId)?.listId
     );
 
-    const droppedTarget = await json("planka_manage_lists", {
-      action: "delete",
+    const droppedTarget = await json("planka_delete_list", {
       listId: moveTarget.list.id,
     });
     if (droppedTarget?.verified === true) forget("lists", moveTarget.list.id);
     check(
-      "planka_manage_lists delete removes the temporary column, verified: true",
+      "planka_delete_list removes the temporary column, verified: true",
       droppedTarget?.verified === true,
       droppedTarget
     );
@@ -762,13 +759,13 @@ async function run() {
     `mcp=${emptyMcp?.commentCount} · raw=${emptyRaw.items?.length}`
   );
 
-  const addedComment = await json("planka_add_comment", {
+  const addedComment = await json("planka_create_comment", {
     cardId,
     text: "smoke: original comment",
   });
   const commentId = addedComment?.comment?.id;
   check(
-    "planka_add_comment creates the comment, verified: true",
+    "planka_create_comment creates the comment, verified: true",
     Boolean(commentId) && addedComment.verified === true,
     addedComment
   );
@@ -796,13 +793,12 @@ async function run() {
     readMcp?.comments?.[0]
   );
 
-  const editedComment = await json("planka_manage_comment", {
-    action: "update",
+  const editedComment = await json("planka_update_comment", {
     commentId,
     text: "smoke: edited comment",
   });
   check(
-    "planka_manage_comment update, verified: true",
+    "planka_update_comment, verified: true",
     editedComment?.verified === true,
     editedComment
   );
@@ -816,12 +812,9 @@ async function run() {
     `mcp=${afterEditMcp?.comments[0].text} · raw=${afterEditRaw.items[0]?.text}`
   );
 
-  const deletedComment = await json("planka_manage_comment", {
-    action: "delete",
-    commentId,
-  });
+  const deletedComment = await json("planka_delete_comment", { commentId });
   check(
-    "planka_manage_comment delete, verified: true",
+    "planka_delete_comment, verified: true",
     deletedComment?.verified === true,
     deletedComment
   );
@@ -832,6 +825,28 @@ async function run() {
     "after deleting: 0 over MCP and 0 over the raw API",
     afterDeleteMcp?.commentCount === 0 && (afterDeleteRaw.items?.length ?? 0) === 0,
     `mcp=${afterDeleteMcp?.commentCount} · raw=${afterDeleteRaw.items?.length}`
+  );
+
+  // The two remaining deprecated aliases, on a throwaway comment: the old
+  // names must keep writing exactly like the tools that replaced them.
+  const aliasComment = await json("planka_add_comment", {
+    cardId,
+    text: "smoke: alias comment",
+  });
+  check(
+    "planka_add_comment (DEPRECATED alias) still creates, verified: true",
+    Boolean(aliasComment?.comment?.id) && aliasComment.verified === true,
+    aliasComment
+  );
+
+  const aliasDeleted = await json("planka_manage_comment", {
+    action: "delete",
+    commentId: aliasComment?.comment?.id,
+  });
+  check(
+    "planka_manage_comment (DEPRECATED alias) still deletes, verified: true",
+    aliasDeleted?.verified === true,
+    aliasDeleted
   );
 
   // --- attachments: byte-for-byte roundtrip ---------------------------------
@@ -902,25 +917,23 @@ async function run() {
   );
 
   // --- board lists ----------------------------------------------------------
-  const tempList = await json("planka_manage_lists", {
-    action: "create",
+  const tempList = await json("planka_create_list", {
     boardId,
     name: `${PREFIX} temporary list`,
   });
   if (tempList?.list?.id) artifacts.lists.push(tempList.list.id);
   check(
-    "planka_manage_lists create, verified: true",
+    "planka_create_list, verified: true",
     Boolean(tempList?.list?.id) && tempList.verified === true,
     tempList
   );
 
-  const renamedList = await json("planka_manage_lists", {
-    action: "update",
+  const renamedList = await json("planka_update_list", {
     listId: tempList.list.id,
     name: `${PREFIX} renamed list`,
   });
   check(
-    "planka_manage_lists update renames, verified: true",
+    "planka_update_list renames, verified: true",
     renamedList?.list?.name === `${PREFIX} renamed list` &&
       renamedList.verified === true,
     renamedList
@@ -968,13 +981,14 @@ async function run() {
     bulkNoop
   );
 
+  // The one deprecated-alias check for lists.
   const deletedList = await json("planka_manage_lists", {
     action: "delete",
     listId: tempList.list.id,
   });
   if (deletedList?.verified === true) forget("lists", tempList.list.id);
   check(
-    "planka_manage_lists delete, verified: true",
+    "planka_manage_lists (DEPRECATED alias) still deletes, verified: true",
     deletedList?.verified === true,
     deletedList
   );
@@ -1135,13 +1149,27 @@ async function run() {
   );
 
   // --- actionable error paths ----------------------------------------------
-  const errMissing = await callTool("planka_add_comment", { cardId });
+  const errMissing = await callTool("planka_create_comment", { cardId });
   check(
     "ERROR: a missing required field names the tool and the field",
     errMissing.isError &&
       errMissing.text.includes("text") &&
-      errMissing.text.includes("planka_add_comment"),
+      errMissing.text.includes("planka_create_comment"),
     errMissing.text
+  );
+
+  // The alias cannot declare per-action required fields, so it borrows the
+  // target's. This is the check that the borrowing works.
+  const errAliasMissing = await callTool("planka_manage_comment", {
+    action: "update",
+    commentId: "1",
+  });
+  check(
+    "ERROR: manage_comment update without text points at planka_update_comment",
+    errAliasMissing.isError &&
+      errAliasMissing.text.includes("text") &&
+      errAliasMissing.text.includes("planka_update_comment"),
+    errAliasMissing.text
   );
 
   const errEmptyId = await callTool("planka_get_card", { cardId: "" });
@@ -1165,8 +1193,7 @@ async function run() {
     errNoop.text
   );
 
-  const errBadType = await callTool("planka_manage_lists", {
-    action: "create",
+  const errBadType = await callTool("planka_create_list", {
     boardId,
     name: `${PREFIX} should not exist`,
     position: "not-a-number",
@@ -1248,13 +1275,10 @@ async function run() {
   );
 
   for (const labelId of [labelA.label.id, labelB.label.id]) {
-    const deletedLabel = await json("planka_manage_labels", {
-      action: "delete",
-      labelId,
-    });
+    const deletedLabel = await json("planka_delete_label", { labelId });
     if (deletedLabel?.verified === true) forget("labels", labelId);
     check(
-      `planka_manage_labels delete (${labelId}), verified: true`,
+      `planka_delete_label (${labelId}), verified: true`,
       deletedLabel?.verified === true,
       deletedLabel
     );

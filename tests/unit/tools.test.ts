@@ -7,10 +7,10 @@ import {
 import { parsePolicy } from "../../src/config/policy.js";
 
 describe("MCP tool registry", () => {
-  it("publishes exactly 32 uniquely named tools", () => {
+  it("publishes exactly 41 uniquely named tools", () => {
     const names = allTools.map((tool) => tool.name);
-    expect(names).toHaveLength(32);
-    expect(new Set(names).size).toBe(32);
+    expect(names).toHaveLength(41);
+    expect(new Set(names).size).toBe(41);
   });
 
   it("publishes JSON schemas with required object roots", () => {
@@ -25,7 +25,7 @@ describe("access policy applied to the registry", () => {
   const open = parsePolicy({});
 
   it("lists every tool when nothing is restricted", () => {
-    expect(getToolDefinitions(open)).toHaveLength(32);
+    expect(getToolDefinitions(open)).toHaveLength(41);
   });
 
   it("hides write tools in read-only mode", () => {
@@ -44,7 +44,7 @@ describe("access policy applied to the registry", () => {
     });
     const names = getToolDefinitions(policy).map((t) => t.name);
 
-    expect(names).toHaveLength(30);
+    expect(names).toHaveLength(39);
     expect(names).not.toContain("planka_get_board");
     expect(names).not.toContain("planka_delete_card");
   });

@@ -1,6 +1,8 @@
 # Tools reference
 
-The server exposes exactly 32 tools. Tool results are MCP text content containing
+The server exposes exactly 41 tools: 36 in active use plus 5 deprecated ones kept
+as aliases (see [Deprecated aliases](#deprecated-aliases); `PLANKA_HIDE_DEPRECATED`
+takes them out of `tools/list`). Tool results are MCP text content containing
 JSON (minified — the indentation was pure token cost). On an expected Planka
 error, the result has `isError: true` and a human-readable message instead of a
 false success.
@@ -64,20 +66,21 @@ configured Planka instance, not the open web.
 | Group | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
 |---|---|---|---|
 | Reads (`get_*`, `list_*`, `find_cards`, `board_summary`) | `true` | `false` | `true` |
-| Additive writes (`create_card`, `create_tasks`, `add_comment`, `add_attachment`) | `false` | `false` | `false` |
-| Converging writes (`move_card`, `update_task`) | `false` | `false` | `true` |
-| Data-losing writes (`update_card`, `set_card_labels`, every `delete_*`, `manage_comment`) | `false` | `true` | `true` |
-| Multi-action managers (`manage_labels`, `manage_lists`) | `false` | `true` | `false` |
+| Additive writes (`create_card`, `create_tasks`, `create_comment`, `create_label`, `create_list`, `add_attachment`) | `false` | `false` | `false` |
+| Converging writes (`move_card`, `update_task`, `update_label`, `update_list`, `update_comment`) | `false` | `false` | `true` |
+| Data-losing writes (`update_card`, `set_card_labels`, every `delete_*`) | `false` | `true` | `true` |
+| Deprecated multi-action aliases (`manage_labels`, `manage_lists`) | `false` | `true` | `false` |
 
 **Anthropic `_meta`.** Claude Code does not gate permissions on the standard
 hints; it reads two `_meta` keys instead, and the server ships both:
 
 - `anthropic/requiresUserInteraction: true` forces the permission prompt even
   under an `allow` rule — set on `planka_delete_card`, `planka_delete_task`,
-  `planka_delete_attachment`, `planka_manage_comment`, `planka_manage_lists` and
-  `planka_manage_labels`. The last three are marked whole because one of their
-  actions deletes: a list takes its cards with it, a label disappears from every
-  card that carried it.
+  `planka_delete_attachment`, `planka_delete_label`, `planka_delete_list`,
+  `planka_delete_comment`, and the deprecated `planka_manage_comment`,
+  `planka_manage_lists` and `planka_manage_labels`. The three aliases are marked
+  whole because one of their actions deletes: a list takes its cards with it, a
+  label disappears from every card that carried it.
 - `anthropic/maxResultSizeChars: 4500000` on `planka_view_attachment`, so a
   base64 image up to 3 MB is not clipped by the default per-tool ceiling.
 
@@ -481,50 +484,59 @@ confirmed against the card.
 
 ## Labels
 
-### `planka_manage_labels`
+### `planka_create_label`
 
-Creates, updates, or deletes a board label. The `action` determines which IDs
-are required.
-
-Create:
+Creates a board label.
 
 ```json
 {
-  "action": "create",
   "boardId": "2234567890123456789",
   "name": "needs-decision",
   "color": "berry-red"
 }
 ```
 
-Update:
+`boardId`, `name` and `color` are `required` in the JSON Schema, so a client
+rejects an incomplete call before it leaves. With `PLANKA_DEFAULT_BOARD_ID` set,
+`boardId` drops out of `required` and is filled in.
+
+`color` is a real JSON Schema `enum` of the 43 Planka 2.x colors, so a bad color
+is rejected before the call leaves the client. Unknown colors are still accepted
+on reads, so one new upstream color cannot break a board response. Run
+`planka_board_summary` to see the colors already in use.
+
+The write is verified against a re-read of the board's labels.
+
+### `planka_update_label`
+
+Renames a label or changes its color.
 
 ```json
 {
-  "action": "update",
   "labelId": "4234567890123456789",
   "name": "decision-needed",
   "color": "pumpkin-orange"
 }
 ```
 
-Delete:
+A call carrying only `labelId` is rejected (`nothing to do`) instead of sending
+an empty `PATCH` that Planka would answer `200` to. The response reports the
+board's copy of the label, not the `PATCH` echo.
+
+### `planka_delete_label`
+
+Deletes a board label.
 
 ```json
 {
-  "action": "delete",
   "labelId": "4234567890123456789"
 }
 ```
 
-`color` is a real JSON Schema `enum` of the 43 Planka 2.x colors, so a bad
-color is rejected before the call leaves the client. Unknown colors are still
-accepted on reads, so one new upstream color cannot break a board response.
-Run `planka_board_summary` to see the colors already in use.
+> **DESTRUCTIVE.** The label disappears from every card that carried it.
 
-Every action is verified against a re-read of the board's labels: `update` with
-only `labelId` is rejected (`nothing to do`), and a `delete` whose label is
-still on the board comes back as `verified: false` + `isError`.
+Confirmed by re-reading the board: a label still there afterwards comes back as
+`verified: false` + `isError`.
 
 ### `planka_set_card_labels`
 
@@ -552,10 +564,11 @@ absent, failed, and final label IDs. This makes silent no-op writes visible.
 
 ## Comments
 
-### `planka_add_comment`
+### `planka_create_comment`
 
 Adds a Markdown-capable comment through Planka 2.x's dedicated card action
-endpoint.
+endpoint. (Formerly `planka_add_comment`, which still works — see
+[Deprecated aliases](#deprecated-aliases).)
 
 ```json
 {
@@ -601,57 +614,44 @@ Planka's own counter.
 This does not rely on `included.comments`, which is empty in affected Planka 2.x
 responses even when the card has comments.
 
-### `planka_manage_comment`
+### `planka_update_comment`
 
-Edits or deletes an existing comment. Get comment IDs from
-`planka_get_comments`.
-
-Update:
+Rewrites a comment. Get comment IDs from `planka_get_comments`.
 
 ```json
 {
-  "action": "update",
   "commentId": "1034567890123456789",
   "text": "Verification complete: unit tests and the manual export both passed."
 }
 ```
 
-Delete:
+`commentId` and `text` are both `required`. Planka only lets the authenticated
+user modify comments that user wrote, so an agent can correct its own notes but
+not someone else's. The card's comments are re-read before the tool reports: an
+edit that did not stick comes back as `verified: false` + `isError`.
+
+### `planka_delete_comment`
+
+Deletes a comment.
 
 ```json
 {
-  "action": "delete",
   "commentId": "1034567890123456789"
 }
 ```
 
-`text` is required for `update` and ignored for `delete`. Planka only lets the
-authenticated user modify comments that user wrote, so an agent can correct its
-own notes but not someone else's. Both actions re-read the card's comments
-before reporting: an edit that did not stick, or a comment still present after
-its delete, comes back as `verified: false` + `isError`.
+Confirmed by re-reading the card's comments; a comment still present afterwards
+comes back as `verified: false` + `isError`.
 
 ## Lists
 
-### `planka_manage_lists`
+### `planka_create_list`
 
-Creates, updates, or deletes a board list (column). Creation sends an explicit
-Planka 2.x list `type`; it defaults to `active`.
-
-> **DESTRUCTIVE — `delete` takes the cards with it.** Deleting a list deletes
-> every card inside it, and Planka does not ask. Move the cards out first (see
-> `planka_move_card`), or delete a column you created yourself. This cannot be
-> undone.
-
-Every action is verified against a re-read of the board: `update` with only
-`listId` is rejected (`nothing to do`), and a `delete` whose list is still on
-the board comes back as `verified: false` + `isError`.
-
-Create:
+Creates a board list (column). Creation sends an explicit Planka 2.x list
+`type`; it defaults to `active`.
 
 ```json
 {
-  "action": "create",
   "boardId": "2234567890123456789",
   "name": "Pending",
   "position": 65536,
@@ -659,11 +659,16 @@ Create:
 }
 ```
 
-Update:
+`boardId` and `name` are `required` (`boardId` drops out with
+`PLANKA_DEFAULT_BOARD_ID`). Only `active` and `closed` are accepted for list
+writes; internal Planka list types such as archive and trash remain readable.
+
+### `planka_update_list`
+
+Renames, repositions or reclassifies a column.
 
 ```json
 {
-  "action": "update",
   "listId": "3234567890123456789",
   "name": "Ready",
   "position": 131072,
@@ -671,17 +676,26 @@ Update:
 }
 ```
 
-Delete:
+A call carrying only `listId` is rejected (`nothing to do`). The response reports
+the board's copy of the list.
+
+### `planka_delete_list`
+
+Deletes a column.
 
 ```json
 {
-  "action": "delete",
   "listId": "3234567890123456789"
 }
 ```
 
-Only `active` and `closed` are accepted for list writes. Internal Planka list
-types such as archive and trash remain readable.
+> **DESTRUCTIVE — it takes the cards with it.** Deleting a list deletes every
+> card inside it, and Planka does not ask. Move the cards out first with
+> `planka_move_list_cards` or `planka_move_card`, or delete a column you created
+> yourself. This cannot be undone.
+
+Confirmed by re-reading the board: a list still there afterwards comes back as
+`verified: false` + `isError`.
 
 ## Attachments
 
@@ -1059,6 +1073,36 @@ before retrying. An already empty source column is not an error: it answers
 `moved: 0`. `PLANKA_PROTECTED_LIST_IDS` guards both ends, so a protected column
 can be neither filled nor drained.
 
+## Deprecated aliases
+
+Five names are kept alive only so callers written against them keep working.
+They add no behaviour: each routes its arguments to the tool that replaced it.
+
+| Deprecated | Use instead |
+|---|---|
+| `planka_manage_labels` | `planka_create_label` · `planka_update_label` · `planka_delete_label` |
+| `planka_manage_lists` | `planka_create_list` · `planka_update_list` · `planka_delete_list` |
+| `planka_manage_comment` | `planka_update_comment` · `planka_delete_comment` (and `planka_create_comment`) |
+| `planka_add_comment` | `planka_create_comment` |
+| `planka_get_board` | `planka_board_summary` + `planka_find_cards` |
+
+**Why they were split.** A single tool with an `action` enum cannot express
+"`boardId` is required when `action` is `create`" in JSON Schema. So each
+`manage_*` tool carried 20-40 lines of hand-written "which field does this
+action need?" checks — and a forgotten branch is exactly how `update` with only
+an id shipped an empty `PATCH` that Planka answered `200` to. One tool per
+action puts the answer back in `required`, where the client enforces it before
+the call is made and the server's generic presence check covers the rest.
+
+The aliases borrow their target's `required` at dispatch time, so
+`planka_manage_labels` with `action: "update"` and no `labelId` is refused with a
+message naming `planka_update_label` rather than sending an empty write.
+
+**Hiding them.** `PLANKA_HIDE_DEPRECATED=true` drops all five from `tools/list`,
+which is worth ~4.7 kB of `tools/list` (34,444 → 29,788 characters, measured).
+They stay callable: a model working from a cached tool list, or from a skill that
+names one, gets the real behaviour instead of "unknown tool".
+
 ## When arguments are wrong
 
 Invalid input is reported as an error result naming the tool, the field, what
@@ -1102,7 +1146,7 @@ Unit tests validate schemas, request construction, and error formatting without 
 network: run them with `npm test`.
 
 The opt-in smoke test is the other half. It starts the built MCP server over stdio,
-drives all 32 tools through real MCP calls, and independently queries the raw
+drives all 41 tools through real MCP calls, and independently queries the raw
 Planka HTTP API after every mutation, so a tool that reports success on something
 that never landed is caught here. It runs over 90 named checks.
 

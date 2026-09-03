@@ -130,7 +130,15 @@ export const toolPresentation: Record<string, ToolPresentation> = {
   },
 
   // --- labels ---------------------------------------------------------------
+  planka_create_label: { title: "Create label", annotations: CREATE },
+  planka_update_label: { title: "Update label", annotations: UPDATE },
   // delete removes the label from every card that carried it.
+  planka_delete_label: {
+    title: "Delete label",
+    annotations: DESTRUCTIVE,
+    _meta: { ...NEEDS_CONFIRMATION },
+  },
+  // DEPRECATED alias, routes to the three above.
   planka_manage_labels: {
     title: "Manage board labels",
     annotations: DESTRUCTIVE_CREATE,
@@ -143,9 +151,17 @@ export const toolPresentation: Record<string, ToolPresentation> = {
   },
 
   // --- comments -------------------------------------------------------------
-  planka_add_comment: { title: "Add comment", annotations: CREATE },
+  planka_create_comment: { title: "Add comment", annotations: CREATE },
   planka_get_comments: { title: "Get card comments", annotations: READ },
-  // One tool, two actions: the delete branch makes the whole tool sensitive.
+  planka_update_comment: { title: "Edit comment", annotations: UPDATE },
+  planka_delete_comment: {
+    title: "Delete comment",
+    annotations: DESTRUCTIVE,
+    _meta: { ...NEEDS_CONFIRMATION },
+  },
+  // DEPRECATED alias of planka_create_comment.
+  planka_add_comment: { title: "Add comment (deprecated)", annotations: CREATE },
+  // DEPRECATED alias: the delete branch makes the whole tool sensitive.
   planka_manage_comment: {
     title: "Edit or delete comment",
     annotations: DESTRUCTIVE,
@@ -153,7 +169,15 @@ export const toolPresentation: Record<string, ToolPresentation> = {
   },
 
   // --- lists ----------------------------------------------------------------
+  planka_create_list: { title: "Create column", annotations: CREATE },
+  planka_update_list: { title: "Update column", annotations: UPDATE },
   // delete takes the column's cards with it.
+  planka_delete_list: {
+    title: "Delete column",
+    annotations: DESTRUCTIVE,
+    _meta: { ...NEEDS_CONFIRMATION },
+  },
+  // DEPRECATED alias, routes to the three above.
   planka_manage_lists: {
     title: "Manage board columns",
     annotations: DESTRUCTIVE_CREATE,
@@ -213,6 +237,9 @@ export const TOOLS_REQUIRING_USER_INTERACTION = [
   "planka_delete_card",
   "planka_delete_task",
   "planka_delete_attachment",
+  "planka_delete_label",
+  "planka_delete_list",
+  "planka_delete_comment",
   "planka_manage_comment",
   "planka_manage_lists",
   "planka_manage_labels",

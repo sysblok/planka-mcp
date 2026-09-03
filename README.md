@@ -1,6 +1,6 @@
 # planka-mcp
 
-Control a Planka 2.x board from Claude Code through 32 MCP tools.
+Control a Planka 2.x board from Claude Code through 41 MCP tools.
 Writes are re-read and verified, so a reported success matches the board.
 An optional workflow turns that board into durable memory for agent work.
 
@@ -194,7 +194,8 @@ Layer 3 stays true even if this package is pinned back to an older version.
 | `PLANKA_DEFAULT_BOARD_ID` | one board id | `boardId` becomes optional on every tool that takes one, and defaults to this board. Saves the `planka_get_structure` call an agent makes only to recover an id that never changes |
 | `PLANKA_ALLOWED_BOARD_IDS` | comma-separated board ids | Boards outside the list are filtered out of `planka_get_structure`, and any call naming one is refused before the request leaves the process |
 | `PLANKA_ALLOWED_PROJECT_IDS` | comma-separated project ids | Same, one level up |
-| `PLANKA_READ_ONLY` | `true` or `1` | The fourteen write tools disappear from `tools/list` and are refused if called anyway |
+| `PLANKA_READ_ONLY` | `true` or `1` | The twenty-seven write tools disappear from `tools/list` and are refused if called anyway |
+| `PLANKA_HIDE_DEPRECATED` | `true` or `1` | Drops the five deprecated tools (`manage_labels`, `manage_lists`, `manage_comment`, `add_comment`, `get_board`) from `tools/list`, saving ~4.7 kB of context. They stay callable, so a cached tool list still works |
 | `PLANKA_DISABLED_TOOLS` | comma-separated tool names | Switches individual tools off. The `planka_` prefix is optional: `get_board` and `planka_get_board` mean the same thing |
 | `PLANKA_PROTECTED_LIST_IDS` | comma-separated list ids | Refuses creating or moving cards **into** those lists, and editing or deleting the lists themselves |
 | `PLANKA_SUMMARY_DECISION_LISTS` | comma-separated column names or ids | Which columns `planka_board_summary` returns cards from when the call does not say. Unset: it returns no cards, only the shape of the board |
@@ -234,7 +235,7 @@ Example — an agent that reads one board and comments, and nothing else:
 }
 ```
 
-## The 32 tools
+## The 41 tools
 
 IDs are strings. Start with `planka_get_structure`, then use IDs returned by
 Planka; do not guess them.
@@ -255,12 +256,21 @@ Planka; do not guess them.
 | `planka_create_tasks` | Adds checklist tasks to a card |
 | `planka_update_task` | Renames or completes a task |
 | `planka_delete_task` | Deletes a task |
-| `planka_manage_labels` | Creates, updates, or deletes board labels |
+| `planka_create_label` | Creates a board label |
+| `planka_update_label` | Renames a label or changes its color |
+| `planka_delete_label` | Deletes a label from the board and from every card |
+| `planka_manage_labels` | **Deprecated.** Alias routing `action` to the three above |
 | `planka_set_card_labels` | Adds or removes labels and verifies the final state |
-| `planka_add_comment` | Adds a comment through Planka 2.x's dedicated endpoint |
+| `planka_create_comment` | Adds a comment through Planka 2.x's dedicated endpoint |
 | `planka_get_comments` | Paginated comments (`limit`, `beforeId`, `all`) |
-| `planka_manage_comment` | Edits or deletes an existing comment |
-| `planka_manage_lists` | Creates, updates, or deletes board lists |
+| `planka_update_comment` | Rewrites an existing comment |
+| `planka_delete_comment` | Deletes a comment |
+| `planka_add_comment` | **Deprecated.** Alias of `planka_create_comment` |
+| `planka_manage_comment` | **Deprecated.** Alias routing `action` to update/delete |
+| `planka_create_list` | Creates a list (column) on a board |
+| `planka_update_list` | Renames, repositions or reclassifies a column |
+| `planka_delete_list` | Deletes a column **and every card in it** |
+| `planka_manage_lists` | **Deprecated.** Alias routing `action` to the three above |
 | `planka_add_attachment` | Uploads a local file to a card and verifies it landed |
 | `planka_get_attachments` | Lists a card's attachments with type, size, and download URL |
 | `planka_view_attachment` | Returns an attachment's content; images come back viewable |
@@ -347,7 +357,7 @@ npm test
 ```
 
 The real smoke test is opt-in because it mutates a writable board and then cleans
-up after itself. It drives all 32 tools over stdio and cross-checks every write
+up after itself. It drives all 41 tools over stdio and cross-checks every write
 against the raw Planka API — over 90 named checks:
 
 ```bash

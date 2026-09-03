@@ -23,6 +23,8 @@ export interface AccessPolicy {
   readOnly: boolean;
   /** Tool names switched off by configuration. */
   disabledTools: string[];
+  /** Drop deprecated tools (old names kept as aliases) from `tools/list`. */
+  hideDeprecated: boolean;
   /** Lists that must not receive cards nor be edited/deleted. */
   protectedListIds: string[];
   /**
@@ -52,10 +54,19 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "planka_create_tasks",
   "planka_update_task",
   "planka_delete_task",
+  "planka_create_label",
+  "planka_update_label",
+  "planka_delete_label",
   "planka_manage_labels",
   "planka_set_card_labels",
+  "planka_create_comment",
+  "planka_update_comment",
+  "planka_delete_comment",
   "planka_add_comment",
   "planka_manage_comment",
+  "planka_create_list",
+  "planka_update_list",
+  "planka_delete_list",
   "planka_manage_lists",
   "planka_add_attachment",
   "planka_delete_attachment",
@@ -161,6 +172,10 @@ export function parsePolicy(env: NodeJS.ProcessEnv): AccessPolicy {
     readOnly: parseBoolean("PLANKA_READ_ONLY", env.PLANKA_READ_ONLY),
     disabledTools: (parseCsv(env.PLANKA_DISABLED_TOOLS) ?? []).map(
       normalizeToolName
+    ),
+    hideDeprecated: parseBoolean(
+      "PLANKA_HIDE_DEPRECATED",
+      env.PLANKA_HIDE_DEPRECATED
     ),
     protectedListIds: parseCsv(env.PLANKA_PROTECTED_LIST_IDS) ?? [],
     summaryHighlightLabel: parseOptionalString(
