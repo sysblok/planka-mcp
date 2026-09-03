@@ -52,6 +52,14 @@ All notable changes to this project are documented here.
   token saving.)
 - Tool payloads are serialized without indentation (`JSON.stringify(x)`),
   27–46 % fewer characters on the read-heavy tools at zero information cost.
+- Tool descriptions are shorter. The prose that was repeated across many of them
+  — that IDs are strings, that `planka_get_board` is the expensive call, the
+  meaning of `total`/`returned`/`hasMore` — now lives in the server
+  instructions, as the spec asks. The sum of all descriptions went from 3658 to
+  2093 characters; no `inputSchema` changed.
+- `getToolDefinitions()` now propagates `title`, `annotations` and `_meta`. It
+  previously mapped only name, description and schema, which would have dropped
+  them from `tools/list` without any error.
 
 ### Fixed
 
@@ -59,6 +67,31 @@ All notable changes to this project are documented here.
   `comments: []`. A 403, a timeout or an HTML answer now surfaces as an error:
   "this card has no comments" and "I could not read them" are different facts,
   and on a board whose memory lives in the comments the difference is expensive.
+- Server instructions in the `initialize` handshake
+  (`InitializeResult.instructions`, `src/instructions.ts`). Claude Code injects
+  them into the session system prompt and Codex CLI reads them alongside the
+  tool list, so the guidance shared by many tools is stated once: open with
+  `planka_board_summary` and never `planka_get_board`, IDs are strings of digits
+  that come from `planka_get_structure` or `planka_board_summary`, read every
+  comment on a card before acting, reads return digests with
+  `total`/`returned`/`hasMore`, writes report `verified` and `finalLabelIds`,
+  and Planka answers `404` where it means `403`. Budgeted at 1500-2500
+  characters, with the first 512 self-contained for clients that truncate.
+- Tool annotations on all twenty-four tools: a display `title` plus
+  `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`, every
+  field written out rather than inherited. The spec defaults are pessimistic, so
+  without them a conformant client had to treat `planka_get_comments` as being
+  as destructive as `planka_delete_card`.
+- The two Anthropic `_meta` keys Claude Code actually acts on:
+  `anthropic/requiresUserInteraction` on `planka_delete_card`,
+  `planka_delete_task`, `planka_delete_attachment`, `planka_manage_comment`,
+  `planka_manage_lists` and `planka_manage_labels`, which forces the permission
+  prompt even under an `allow` rule; and `anthropic/maxResultSizeChars` on
+  `planka_view_attachment`, so a 3 MB base64 image is not clipped.
+- Tests that keep all of the above honest: every registered tool must have an
+  annotations entry (a new tool without one fails the suite), the tools marked
+  as needing confirmation must carry the `_meta` flag, the instructions must fit
+  their budget, and `tools/list` must return a fixed, snapshotted tool order.
 
 ## [0.2.0] - 2026-08-24
 

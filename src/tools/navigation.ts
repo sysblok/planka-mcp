@@ -11,7 +11,7 @@ import { getBoardWithTaskCounts } from "../operations/boards.js";
 export const getStructureTool = {
   name: "planka_get_structure",
   description:
-    "Get the full project/board/list structure. Use this to understand what projects and boards exist before working with cards.",
+    "Projects, boards and lists with their IDs. The source of the IDs every other tool needs.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -60,7 +60,7 @@ export const getStructureTool = {
 export const getBoardTool = {
   name: "planka_get_board",
   description:
-    "Get a board with all its lists, cards, and labels. Use this to see everything on a board.",
+    "Whole board in one payload: every list, card and label. Expensive — prefer the scoped reads.",
   inputSchema: {
     type: "object" as const,
     properties: {

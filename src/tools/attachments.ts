@@ -42,8 +42,7 @@ function errorResult(message: string) {
 export const addAttachmentTool = {
   name: "planka_add_attachment",
   description:
-    "Upload a local file (screenshot, log, doc) as an attachment on a card. " +
-    "Verifies the upload by re-reading the card's attachments.",
+    "Upload a local file (screenshot, log, doc) onto a card.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -100,7 +99,7 @@ export const addAttachmentTool = {
 export const getAttachmentsTool = {
   name: "planka_get_attachments",
   description:
-    "List the attachments on a card (id, name, mimeType, size, download URL).",
+    "Attachments on a card: id, name, mimeType, size, download URL.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -142,7 +141,7 @@ export const getAttachmentsTool = {
 export const viewAttachmentTool = {
   name: "planka_view_attachment",
   description:
-    "View an attachment's content. Images are returned so the model can actually see them; text files are returned inline; other types return metadata only.",
+    "An attachment's content: images come back viewable, text inline, anything else as metadata only.",
   inputSchema: {
     type: "object" as const,
     properties: {

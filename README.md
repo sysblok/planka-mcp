@@ -143,6 +143,19 @@ complete.
 Every input field and a complete payload for every tool are in
 [Tools reference](docs/tools.md).
 
+## What the client learns on connect
+
+The `initialize` handshake returns a short set of server instructions — how to
+open a session, where IDs come from, why every comment on a card matters, and
+that Planka answers `404` where it means `403`. Claude Code puts them in the
+session system prompt and Codex CLI reads them alongside the tool list, so the
+shared guidance is stated once instead of repeated in 24 tool descriptions.
+Every tool also publishes a display title and all four MCP behavioural hints
+explicitly, rather than inheriting the spec's pessimistic defaults, plus the two
+`_meta` keys Claude Code acts on: a forced confirmation prompt on the tools that
+delete data, and a raised output ceiling on `planka_view_attachment`. Details in
+[Server instructions and annotations](docs/tools.md#server-instructions-and-annotations).
+
 ## Optional agent workflow
 
 The MCP server works on its own. The optional method solves a different problem:

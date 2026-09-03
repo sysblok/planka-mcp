@@ -42,8 +42,7 @@ function sameDate(a: string | null | undefined, b: string | null | undefined) {
 export const createCardTool = {
   name: "planka_create_card",
   description:
-    "Create a card, optionally with tasks (checklist items) and labels. " +
-    "Reports the tasks and labels that actually landed, and always returns the card id — never retry blindly on a partial failure.",
+    "Create a card in a list, optionally with a checklist of tasks.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -208,7 +207,7 @@ export const createCardTool = {
 export const getCardTool = {
   name: "planka_get_card",
   description:
-    "Get full details of a card including tasks, comments, labels, and attachments.",
+    "Full detail of one card: tasks, comments, labels and attachments.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -286,7 +285,7 @@ export const getCardTool = {
 export const updateCardTool = {
   name: "planka_update_card",
   description:
-    "Update a card (name, description, due date, completion). Reports which fields actually landed.",
+    "Update a card's name, description, due date or completion. Null clears a field.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -401,7 +400,7 @@ export const updateCardTool = {
 export const moveCardTool = {
   name: "planka_move_card",
   description:
-    "Move a card to another list (or board) or position — workflow transitions. Fails loudly if the card did not end up where you asked.",
+    "Move a card to another list, board or position — the workflow transition.",
   inputSchema: {
     type: "object" as const,
     properties: {

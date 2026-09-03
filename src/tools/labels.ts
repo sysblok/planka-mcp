@@ -285,8 +285,7 @@ export const manageLabelsTool = {
 export const setCardLabelsTool = {
   name: "planka_set_card_labels",
   description:
-    "Add or remove labels from a card. Pass label IDs from the board (planka_board_summary lists them), not label names. " +
-    "Reports what actually landed on the card, verified by re-reading it.",
+    "Add or remove labels on a card, by label ID — never by name. IDs come from planka_board_summary.",
   inputSchema: {
     type: "object" as const,
     properties: {

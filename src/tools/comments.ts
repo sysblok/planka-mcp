@@ -21,7 +21,7 @@ import { PlankaError } from "../errors.js";
 export const addCommentTool = {
   name: "planka_add_comment",
   description:
-    "Add a comment to a card (status updates, notes, agent logs). Verified by re-reading the card's comments.",
+    "Comment on a card: status updates, notes, agent activity logs.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -126,7 +126,7 @@ export const getCommentsTool = {
 export const manageCommentTool = {
   name: "planka_manage_comment",
   description:
-    "Update or delete a comment (IDs from planka_get_comments). Only the agent user's own comments can be modified. Verified by re-reading.",
+    "Update or delete a comment, by ID from planka_get_comments. Only the agent user's own comments.",
   inputSchema: {
     type: "object" as const,
     properties: {

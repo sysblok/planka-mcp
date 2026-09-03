@@ -27,6 +27,7 @@ import {
   isZodError,
 } from "./errors.js";
 import { SERVER_NAME, SERVER_VERSION } from "./identity.generated.js";
+import { SERVER_INSTRUCTIONS } from "./instructions.js";
 
 /** Standard error response back to the model. */
 function errorResult(text: string) {
@@ -50,6 +51,9 @@ async function main() {
       capabilities: {
         tools: {},
       },
+      // Sent back in the initialize handshake. Claude Code puts it in the system
+      // prompt, Codex reads it alongside the tool list.
+      instructions: SERVER_INSTRUCTIONS,
     }
   );
 
