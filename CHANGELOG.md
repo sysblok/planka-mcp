@@ -27,8 +27,61 @@ All notable changes to this project are documented here.
   there and back, both directions cross-checked against the raw API) and
   `verified: true` assertions on every write.
 
+
+- **Board reads redesigned around one principle: a small digest by default, the
+  detail through parameters.** `planka_find_cards` is now the single read over
+  cards and takes `listId`, `listName`, `query`, `labelName` (alias
+  `labelFilter`), `labelIds`, `userIds`, `withLabels`, `detail`
+  (`"digest" | "full"`), `withDescription`, `descriptionChars`, `limit` and
+  `offset`.
+- `planka_find_cards` with a `listId` reads the column through
+  `GET /api/lists/:id`: **one request, no cursor**, so `total` is the real size
+  of the column and the answer carries `truncated: false`. A 159-card column
+  went from five requests to two (one with `withLabels: false`).
+- The card digest now carries `members`, `commentsTotal` and `updatedAt`, and
+  `detail: "full"` returns every field Planka gave, description included.
+- `planka_board_summary` absorbs `planka_list_lists`: `cardsFrom: []` answers
+  columns and labels with no cards. It also reports `totalCards`.
+- `warnings` on `planka_board_summary` and `planka_find_cards`: a `cardsFrom`
+  entry, a `listName` or a `highlightLabel` that matches nothing comes back
+  naming what does exist, instead of an empty result that reads like "there is
+  nothing there".
+- `PLANKA_SUMMARY_DECISION_LISTS` and `PLANKA_SUMMARY_HIGHLIGHT_LABEL`: the
+  board vocabulary that used to be hardcoded in Spanish inside the server now
+  comes from the environment, and defaults to nothing.
+- `planka_get_structure` takes `withLists` (default `true`). With `false` the
+  whole structure is ONE request instead of one board read per board — 203
+  characters against 696 on the reference instance.
+- `planka_get_board` takes `limit` (default 50) and reports `totalCards`,
+  `returnedCards` and `truncated`.
+- `excludesArchived: true` on every read derived from the board show, and a new
+  gotcha documenting why: `GET /api/boards/:id` carries no archive and no trash
+  cards, and there is no way to ask for them.
+- `query` semantics are now Planka's own: several words are ANDed, and a leading
+  `/` makes the rest a case-insensitive regular expression. A broken regex is
+  reported instead of matching nothing.
+- 18 unit tests for the redesigned reads (list path, digest vs full, aliases,
+  warnings, derived page size, `excludesArchived`, `withLists`). Suite: 116 →
+  134 tests.
+
+### Deprecated
+
+- **`planka_get_board`.** Its description now starts with
+  `DEPRECATED: use planka_board_summary + planka_find_cards`. It stays
+  functional, and it is capped: 56,112 → 17,215 characters on the reference
+  board.
+- `planka_list_lists` and `planka_list_cards` are kept as **aliases** —
+  respectively `planka_board_summary` with `cardsFrom: []` and
+  `planka_find_cards` with `listId`. Same implementation, same response shape;
+  the tool count and every tool name are unchanged.
+
 ### Changed
 
+- **Read response shapes changed** (the tool names did not): `planka_list_cards`
+  answers `matches` where it used to answer `cards`, `warning` (a string) became
+  `warnings` (an array) on `planka_find_cards`, the per-card `list` is now
+  `listName` and appears only when the result spans several columns, and
+  `planka_board_summary` no longer defaults to Spanish column and label names.
 - **A `200` is no longer a success.** `planka_create_card`, `planka_update_card`,
   `planka_move_card`, `planka_delete_card`, `planka_create_tasks`,
   `planka_update_task`, `planka_delete_task`, `planka_manage_labels`,
@@ -63,6 +116,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `getCardsForList` derives Planka's page size from the first response instead
+  of assuming 50. An instance answering 20 per page used to stop on page one and
+  report a third of a column as the whole of it, with `truncated: false`.
+- The card schema accepts `commentsTotal`, `isClosed` and `isDueCompleted`,
+  including the `null` Planka actually sends — reading them as booleans would
+  have made every board read fail.
+- `planka_find_cards` no longer returns `listId` **and** `list` on every match:
+  a search scoped to one column names it once, at the root.
 - `planka_get_card` no longer swallows a failing comments endpoint into
   `comments: []`. A 403, a timeout or an HTML answer now surfaces as an error:
   "this card has no comments" and "I could not read them" are different facts,

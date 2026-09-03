@@ -197,6 +197,18 @@ Layer 3 stays true even if this package is pinned back to an older version.
 | `PLANKA_READ_ONLY` | `true` or `1` | The fourteen write tools disappear from `tools/list` and are refused if called anyway |
 | `PLANKA_DISABLED_TOOLS` | comma-separated tool names | Switches individual tools off. The `planka_` prefix is optional: `get_board` and `planka_get_board` mean the same thing |
 | `PLANKA_PROTECTED_LIST_IDS` | comma-separated list ids | Refuses creating or moving cards **into** those lists, and editing or deleting the lists themselves |
+| `PLANKA_SUMMARY_DECISION_LISTS` | comma-separated column names or ids | Which columns `planka_board_summary` returns cards from when the call does not say. Unset: it returns no cards, only the shape of the board |
+| `PLANKA_SUMMARY_HIGHLIGHT_LABEL` | one label name | The label that marks a card as unblocked in `planka_board_summary`. Unset: nothing is highlighted |
+
+**The server ships with no board vocabulary of its own.** Column names and
+"ready" labels are yours, in your language: the last two variables are how a
+deployment tells the summary what its board looks like. A hint that matches
+nothing comes back in `warnings`, never as an empty answer.
+
+```json
+"PLANKA_SUMMARY_DECISION_LISTS": "decision,probalo,miralo",
+"PLANKA_SUMMARY_HIGHLIGHT_LABEL": "decidido"
+```
 
 **Allowlists are by id, never by name.** Any board editor can rename a board, so
 a name-based allowlist is bypassed with one edit. Planka ids are stable.
@@ -230,11 +242,11 @@ Planka; do not guess them.
 | Tool | What it does |
 |---|---|
 | `planka_get_structure` | Lists visible projects, boards, and lists |
-| `planka_get_board` | Reads one board with its lists, cards, labels, and optional task counts |
-| `planka_list_lists` | Lists a board's columns with card counts, and no cards |
-| `planka_board_summary` | One-call briefing: columns, labels, and the cards waiting on a decision |
-| `planka_list_cards` | Reads one column, paginated, without descriptions by default |
-| `planka_find_cards` | Searches a board's cards by label, text, or column |
+| `planka_get_board` | **Deprecated.** Reads one board whole, up to `limit` cards |
+| `planka_board_summary` | One-call briefing: columns with counts, labels with ids, and optionally the cards of named columns |
+| `planka_find_cards` | The one read over cards: one column (`listId`), or a board searched by text, label or member |
+| `planka_list_lists` | Alias of `planka_board_summary` with `cardsFrom: []` |
+| `planka_list_cards` | Alias of `planka_find_cards` with `listId` |
 | `planka_create_card` | Creates a card and can attach tasks and labels |
 | `planka_get_card` | Reads complete card details |
 | `planka_update_card` | Updates title, description, due date, or completion |
@@ -254,13 +266,18 @@ Planka; do not guess them.
 | `planka_view_attachment` | Returns an attachment's content; images come back viewable |
 | `planka_delete_attachment` | Deletes an attachment |
 
-`planka_get_board` returns the entire board, which is often more than the
-question needs. The four scoped reads answer narrower questions and return far
-less text: measured on a board of 100 cards, `planka_list_lists` returned 39
-times less than `planka_get_board`, `planka_board_summary` 16 times less, and
-`planka_find_cards` between 18 and 56 times less depending on the filter. They
-also report `total`, `returned`, and `hasMore`, so a clipped answer never looks
-complete.
+The reads follow one principle: **a small digest by default, the detail through
+parameters**. `planka_board_summary` opens a session in one call;
+`planka_find_cards` with a `listId` reads a whole column in ONE request through
+`GET /api/lists/:id`, so `total` is the real size of the column and the answer
+carries `truncated: false`; the same tool without a `listId` searches the board.
+Measured on the reference board of 185 cards, the deprecated `planka_get_board`
+went from 56,112 to 17,215 characters and `planka_get_structure`
+(`withLists: false`) from 696 to 203, while a 159-card column went from five
+requests to two. Every read reports `total`, `returned` and `hasMore`, so a
+clipped answer never looks complete, and every board-derived read carries
+`excludesArchived: true` because Planka keeps archive and trash out of the board
+read.
 
 Every input field and a complete payload for every tool are in
 [Tools reference](docs/tools.md).

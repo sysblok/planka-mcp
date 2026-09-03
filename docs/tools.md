@@ -26,8 +26,8 @@ comments and attachments, and a board read for labels and lists.
 ## Before your first call
 
 - All Planka IDs are strings, even when they contain only digits.
-- Discover IDs with `planka_get_structure`, `planka_list_lists`, or
-  `planka_get_board`.
+- Discover IDs with `planka_board_summary` (columns and labels of one board) or
+  `planka_get_structure` (projects and boards).
 - Reading a whole board is the expensive call. When you only need one column,
   one label, or the shape of the board, use a [scoped read](#scoped-reads).
 - Dates use ISO 8601, for example `2026-09-01T17:00:00.000Z`.
@@ -104,58 +104,97 @@ Or restrict it to one project:
 }
 ```
 
+| Field | Default | Notes |
+|---|---|---|
+| `projectId` | none | An id that is not visible errors and lists the ones that are |
+| `withLists` | `true` | Include each board's columns |
+
+Planka has no per-board list endpoint: the columns only exist inside a full
+board read, so `withLists: true` costs **one board read per board**.
+`withLists: false` answers projects and boards from the single
+`GET /api/projects` — 203 chars and 1 request against 696 chars and 4 requests
+on the reference instance. Use `planka_board_summary` when you want the columns
+of one board: it brings their card counts too.
+
 ### `planka_get_board`
 
-Reads one board with its labels, lists, cards, and optional checklist counts.
+> **DEPRECATED — use `planka_board_summary` + `planka_find_cards`.**
+> It still works, and it is still the most expensive read of the set.
+
+Reads one board with its labels, lists and cards.
 
 ```json
 {
   "boardId": "2234567890123456789",
-  "includeTaskCounts": true
+  "includeTaskCounts": true,
+  "limit": 50
 }
 ```
 
-Set `includeTaskCounts` to `false` for a smaller response. Labels include their
-raw `color` string; reads intentionally accept colors added by newer Planka versions.
+| Field | Default | Notes |
+|---|---|---|
+| `includeTaskCounts` | `true` | Checklist counts per card |
+| `limit` | `50` | Cards across the WHOLE board, maximum `200` |
+
+It hands out cards in board order until `limit` runs out and then reports
+`totalCards`, `returnedCards` and `truncated: true` — it no longer grows without
+a ceiling. Every response carries `excludesArchived: true`: the board read has
+no cards from the archive and trash lists (see
+[planka-2x-gotchas.md](planka-2x-gotchas.md)).
 
 ## Scoped reads
 
-`planka_get_board` returns the whole board: every card, every description, every
-label link. That is the right call when you really need all of it, and an
-expensive one when you do not. The four tools in this section answer narrower
-questions and return proportionally less text.
-
-Measured against one real board holding 100 cards, in characters of tool
-response:
-
-| Call | Response size | Compared to `planka_get_board` |
-|---|---|---|
-| `planka_get_board` | 44,449 | baseline |
-| `planka_list_lists` | 1,147 | 39x smaller |
-| `planka_board_summary` | 2,737 | 16x smaller |
-| `planka_find_cards` filtered by label | 2,421 | 18x smaller |
-| `planka_find_cards` filtered by text | 795 | 56x smaller |
-
-The gap widens as the board grows, because only `planka_get_board` grows with
-the number of cards.
-
-Which one to reach for:
+Three tools, one principle: **a small digest by default, the detail through
+parameters**.
 
 | Question | Tool |
 |---|---|
-| What columns does this board have, and how full is each one? | `planka_list_lists` |
-| What is on this board and what should I pick up first? | `planka_board_summary` |
-| What is in this one column? | `planka_list_cards` |
-| Which cards carry this label, or mention this text? | `planka_find_cards` |
-| I need every card with every field, in one object | `planka_get_board` |
+| What is on this board — columns, counts, labels? | `planka_board_summary` |
+| What is in this one column? | `planka_find_cards` with `listId` |
+| Which cards carry this label, mention this text, belong to this person? | `planka_find_cards` |
+| I need every field of every card, in one object | `planka_get_board` (deprecated) |
 
-All four report how much they clipped (`total`, `returned`, `hasMore`,
-`nextOffset`), so a partial answer is never mistaken for a complete one.
+`planka_list_lists` and `planka_list_cards` are **aliases** kept for existing
+callers: `planka_list_lists` is `planka_board_summary` with `cardsFrom: []`, and
+`planka_list_cards` is `planka_find_cards` with `listId`. Same implementation,
+same response.
 
-### `planka_list_lists`
+### Measured, against the real reference board
 
-Lists the columns of a board with the number of cards in each one, and no cards
-at all. Use it to see the shape of a board before deciding which column to open.
+185 cards, 10 columns, 23 labels. `chars` is the tool response as serialized;
+`reqs` is how many requests to Planka it took.
+
+| Call | before | after | Δ chars |
+|---|---|---|---|
+| `board_summary` — session opener | 2,045 chars / 1 req | 2,037 / 1 | −0 % |
+| `board_summary` columns only (= `list_lists`) | 782 / 1 | 1,947 / 1 | +149 % |
+| One column of 15 cards (default `limit` 25) | 2,572 / 2 | 3,366 / 2 | +31 % |
+| One column of 159 cards (default `limit` 25) | 4,272 / **5** | 5,834 / **2** | +37 % |
+| One column of 159 cards, `limit: 200` | 27,044 / **5** | 36,230 / **2** | +34 % |
+| `find_cards` by label (29 hits, `limit` 25) | 6,085 / 1 | 6,758 / 1 | +11 % |
+| `find_cards` by text | 1,724 / 1 | 1,986 / 1 | +15 % |
+| `get_board` | 56,112 / 1 | **17,215** / 1 | **−69 %** |
+| `get_structure` with columns | 696 / 4 | 696 / 4 | = |
+| `get_structure` `withLists: false` | — | **203 / 1** | — |
+
+Read it honestly: the card digest got **richer**, not smaller. Each card now
+also carries `commentsTotal`, `updatedAt` and its members — around 40 chars each
+— which is what stops the follow-up call that used to be needed to find out
+whether a card had comments or had moved since the last session. What got
+cheaper is everything else: the whole-board dump (−69 %), the structure without
+columns (−71 %), and the number of requests behind a column read (5 → 2, and
+1 with `withLabels: false`).
+
+`planka_list_lists` grew because it is now `planka_board_summary`'s payload: it
+also returns the board's labels **with their IDs**, which is exactly what
+`planka_set_card_labels` needs and what used to send callers to the deprecated
+`planka_get_board`.
+
+### `planka_board_summary`
+
+One call that describes a board well enough to start working: every column with
+its card count, every label with its ID, and — when asked — the cards of the
+column(s) named in `cardsFrom`.
 
 ```json
 {
@@ -163,38 +202,8 @@ at all. Use it to see the shape of a board before deciding which column to open.
 }
 ```
 
-`planka_get_structure` returns the same column names but not the counts.
-Archive and trash lists are excluded, because they are not board columns.
-
-### `planka_board_summary`
-
-One call that describes a board well enough to start working: every column with
-its card count, every label, and the cards sitting in the column or columns that
-are waiting on a decision. Cards already carrying the unblocking label are sorted
-first and marked `highlighted: true`.
-
-```json
-{
-  "boardId": "2234567890123456789",
-  "cardsFrom": [
-    "blocked"
-  ],
-  "highlightLabel": "ready",
-  "limit": 50
-}
-```
-
-Every field except `boardId` is optional, and the defaults are opinionated:
-
-| Field | Default | What the default does |
-|---|---|---|
-| `cardsFrom` | `["decision", "decide", "blocked", "bloquead"]` | Picks the columns whose names contain one of these fragments |
-| `highlightLabel` | `"decidido"` | Marks cards carrying a label with that exact name |
-| `limit` | `50` | Caps returned cards; maximum `200` |
-
-Those defaults come from the board layout this server was written against, which
-is why one of them is Spanish. They are matching hints, not a requirement: pass
-your own values and the tool behaves exactly the same on an English board.
+That answers columns and labels and **no cards at all**. Ask for cards by naming
+the columns:
 
 ```json
 {
@@ -203,100 +212,94 @@ your own values and the tool behaves exactly the same on an English board.
     "blocked",
     "needs review"
   ],
-  "highlightLabel": "approved"
-}
-```
-
-`cardsFrom` entries match either an exact list ID or a fragment of a column
-name, ignoring case and accents. `highlightLabel` must match a label name
-exactly, again ignoring case and accents. The response echoes the columns it
-actually selected in `cardsFrom` and the label it used in `highlightLabel`, so a
-hint that matched nothing is visible instead of silent.
-
-Card payload is deliberately minimal: `id`, `name`, `list`, `labels`. Follow up
-with `planka_get_card` for one card rather than `planka_get_board` for all of
-them.
-
-### `planka_list_cards`
-
-Reads the cards of one column: `id`, `name`, labels, checklist counts, and due
-date. Descriptions are off by default because they are the expensive field.
-
-```json
-{
-  "listId": "3234567890123456789",
-  "limit": 25,
-  "offset": 0
-}
-```
-
-Filter the column by label name, or ask for description previews:
-
-```json
-{
-  "listId": "3234567890123456789",
-  "labelFilter": "ready",
-  "withDescription": true,
+  "highlightLabel": "approved",
   "limit": 50
 }
 ```
 
-| Field | Default | Notes |
+| Field | Default | What it does |
 |---|---|---|
-| `withLabels` | `true` | Resolving label names costs one extra board read |
-| `withDescription` | `false` | Adds a 200-character preview per card |
-| `labelFilter` | none | Exact label name, case- and accent-insensitive; implies `withLabels` |
-| `limit` | `25` | Maximum `200` |
-| `offset` | `0` | Pass the previous response's `nextOffset` to page |
+| `cardsFrom` | `PLANKA_SUMMARY_DECISION_LISTS`, else none | List IDs, or column-name fragments matched case- and accent-insensitively. `[]` means columns only |
+| `highlightLabel` | `PLANKA_SUMMARY_HIGHLIGHT_LABEL`, else none | Cards carrying that label sort first and get `highlighted: true` |
+| `limit` | `50` | Caps returned cards; maximum `200` |
 
-`limit` and `offset` clip the response, not the request: Planka's own list
-endpoint accepts neither, so the server resolves the whole column through
-Planka's cursor and pages the output. That is what makes `total` honest. If
-pagination stops before the column is exhausted, the response carries
-`truncated: true` and a note saying so.
+**No board vocabulary is hardcoded in the server any more.** The defaults come
+from the environment, so a deployment describes its own board:
 
-Get list IDs from `planka_list_lists` or `planka_get_structure`.
+```bash
+PLANKA_SUMMARY_DECISION_LISTS="decision,probalo,miralo"
+PLANKA_SUMMARY_HIGHLIGHT_LABEL="decidido"
+```
+
+A `cardsFrom` entry that matches no column, or a `highlightLabel` that is not on
+the board, comes back in `warnings` **naming the columns or labels that do
+exist** — never as a silently empty result. The response also carries
+`excludesArchived: true`.
 
 ### `planka_find_cards`
 
-Searches a board's cards by label, by text, or by column, and returns only the
-matches.
+The one read over a board's cards. At least one filter is required
+(`listId`, `listName`, `query`, `labelName`, `labelIds` or `userIds`); an
+unfiltered search would just be a slower `planka_get_board`.
 
-Sweep every card carrying a label:
+One column, the cheap path:
 
 ```json
 {
-  "boardId": "2234567890123456789",
-  "labelName": "ready"
+  "listId": "3234567890123456789"
 }
 ```
 
-Check whether a card about something already exists, before creating a
-duplicate:
+`GET /api/lists/:id` returns **every card of that column in one response**, with
+no cursor to follow: `total` is the real size of the column and the answer
+carries `truncated: false`. `boardId` is not needed — the list names its own
+board.
+
+Search a board:
 
 ```json
 {
   "boardId": "2234567890123456789",
   "query": "export timeout",
+  "labelName": "ready",
   "withDescription": true
 }
 ```
 
-Filters combine, and at least one of `labelName`, `query`, or `listId` is
-required; an unfiltered search would just be a slower `planka_get_board`.
-
 | Field | Default | Notes |
 |---|---|---|
-| `labelName` | none | Exact label name, case- and accent-insensitive |
-| `query` | none | Substring matched against card name **and** description, case- and accent-insensitive |
-| `listId` | none | Restricts the search to one column |
-| `withDescription` | `false` | Adds a 200-character preview per match |
+| `boardId` | `PLANKA_DEFAULT_BOARD_ID` | Ignored when `listId` is given |
+| `listId` | none | One column, one request, never truncated |
+| `listName` | none | Column-name fragment; costs a board read |
+| `query` | none | Name **and** description. Several words are ANDed; a leading `/` makes the rest a case-insensitive regular expression |
+| `labelName` (alias `labelFilter`) | none | Exact label name, case- and accent-insensitive |
+| `labelIds` | none | Label IDs, OR between them |
+| `userIds` | none | Members **or** task assignees, OR between them |
+| `withLabels` | `true` | `false` skips the extra board read on the `listId` path |
+| `detail` | `"digest"` | `"full"` returns every field of the card, description included |
+| `withDescription` | `false` | Adds a 200-character preview |
+| `descriptionChars` | `0` | Length of that preview; overrides `withDescription` |
 | `limit` | `25` | Maximum `200` |
 | `offset` | `0` | Pass the previous response's `nextOffset` to page |
 
-If the board has no label with the requested name, the response still succeeds
-and carries a `warning` naming the labels that do exist. The same happens for a
-`listId` that is not on the board.
+The digest of a card is `id`, `name`, `labels`, `members`, `tasks` (`"2/5"`),
+`dueDate`, `commentsTotal` and `updatedAt`. Empty values are left out entirely,
+and the column is **not repeated on every card**: when the search is scoped to
+one column the response carries `list: {id, name}` once, and only a result
+spanning several columns puts `listName` on each match.
+
+The response says where it came from and what it could not see:
+
+| Field | Meaning |
+|---|---|
+| `source: "list"` | Read through the list show: one request, whole column |
+| `truncated: false` | Guaranteed on the list path |
+| `source: "board"` | Filtered over one board read |
+| `excludesArchived: true` | The board read has no archive/trash cards |
+| `labelsResolved: false` | Label names were not fetched, so `labels` is absent |
+| `warnings` | A label, column or filter that matched nothing, with what does exist |
+
+Get list IDs from `planka_board_summary` or `planka_get_structure`.
 
 ## Cards
 

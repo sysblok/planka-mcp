@@ -6,12 +6,7 @@
  * `returned`, `hasMore`, `nextOffset`): the model never has to guess whether
  * it saw everything.
  */
-import {
-  listCards,
-  getBoardListCounts,
-  getBoardSummary,
-  findCards,
-} from "../operations/boards.js";
+import { getBoardSummary, findCards } from "../operations/boards.js";
 import { PlankaError } from "../errors.js";
 
 /** Standard JSON response for these tools. */
@@ -46,123 +41,185 @@ function withPlankaErrors<P>(
   };
 }
 
+/** Arguments shared by planka_find_cards and its planka_list_cards alias. */
+export interface FindCardsParams {
+  boardId?: string;
+  listId?: string;
+  listName?: string;
+  query?: string;
+  labelName?: string;
+  labelFilter?: string;
+  labelIds?: string[];
+  userIds?: string[];
+  withLabels?: boolean;
+  detail?: "digest" | "full";
+  withDescription?: boolean;
+  descriptionChars?: number;
+  limit?: number;
+  offset?: number;
+}
+
+const findCardsProperties = {
+  boardId: {
+    type: "string",
+    description:
+      "The board ID. Optional when the server has PLANKA_DEFAULT_BOARD_ID; ignored when listId is given (the list names its own board).",
+  },
+  listId: {
+    type: "string",
+    description:
+      "Read exactly this column. THE CHEAP PATH: one request, no pagination, so total is the real size of the column and truncated is false by construction.",
+  },
+  listName: {
+    type: "string",
+    description:
+      "Column name fragment (case- and accent-insensitive) instead of an ID. Costs a board read; listId is cheaper.",
+  },
+  query: {
+    type: "string",
+    description:
+      "Free text matched against card name AND description. Several words are ANDed — all must appear — ignoring case and accents. A leading '/' makes the rest a case-insensitive regular expression.",
+  },
+  labelName: {
+    type: "string",
+    description:
+      "Only cards carrying this label name (exact name, case- and accent-insensitive). If the board has no such label, the response says so and lists the ones it does have.",
+  },
+  labelFilter: {
+    type: "string",
+    description: "Alias of labelName.",
+  },
+  labelIds: {
+    type: "array",
+    items: { type: "string" },
+    description: "Only cards carrying at least one of these label IDs (OR).",
+  },
+  userIds: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "Only cards where one of these users is a member or a task assignee (OR).",
+  },
+  withLabels: {
+    type: "boolean",
+    description:
+      "Resolve label names. Default true; false skips one board read on the listId path.",
+  },
+  detail: {
+    type: "string",
+    enum: ["digest", "full"],
+    description:
+      "digest (default): id, name, labels, members, tasks, dueDate, commentsTotal, updatedAt. full: every field of the card, description included.",
+  },
+  withDescription: {
+    type: "boolean",
+    description:
+      "Add a 200-character description preview per match. Default false — this is the expensive field.",
+  },
+  descriptionChars: {
+    type: "number",
+    description:
+      "Length of that preview. 0 (the default) leaves descriptions out; overrides withDescription.",
+  },
+  limit: {
+    type: "number",
+    description: "Max matches to return. Default 25, max 200.",
+  },
+  offset: {
+    type: "number",
+    description:
+      "Skip this many matches. Use nextOffset from the previous response.",
+  },
+} as const;
+
 /**
- * Tool: planka_list_cards
+ * Tool: planka_find_cards — the one read over a board's cards.
+ */
+export const findCardsTool = {
+  name: "planka_find_cards",
+  description:
+    "Cards of a board or of ONE column, filtered by column, text, label or member, returned as digests. " +
+    "With listId it reads that column in a single request — unpaginated, so `total` is the whole column and nothing is silently clipped. " +
+    "Without it, it filters over one board read (archive and trash excluded). " +
+    "At least one filter is required: listId, listName, query, labelName, labelIds or userIds.",
+  inputSchema: {
+    type: "object" as const,
+    properties: findCardsProperties,
+  },
+  handler: withPlankaErrors(async (params: FindCardsParams) => {
+    const result = await findCards(params);
+    return jsonResult({
+      boardId: result.boardId,
+      ...(result.list ? { list: result.list } : {}),
+      filters: result.filters,
+      ...(result.detail !== "digest" ? { detail: result.detail } : {}),
+      source: result.source,
+      ...(result.labelsResolved ? {} : { labelsResolved: false }),
+      ...(result.truncated === false ? { truncated: false } : {}),
+      ...(result.excludesArchived ? { excludesArchived: true } : {}),
+      total: result.total,
+      returned: result.returned,
+      offset: result.offset,
+      hasMore: result.hasMore,
+      ...(result.nextOffset !== undefined
+        ? { nextOffset: result.nextOffset }
+        : {}),
+      ...(result.warnings.length > 0 ? { warnings: result.warnings } : {}),
+      matches: result.matches,
+    });
+  }),
+};
+
+/**
+ * Tool: planka_list_cards — alias of planka_find_cards with listId.
  */
 export const listCardsTool = {
   name: "planka_list_cards",
   description:
-    "Cards of ONE list/column: id, name, labels, task counts, dueDate. " +
-    "List IDs come from planka_list_lists or planka_get_structure.",
+    "Alias of planka_find_cards with listId: the cards of ONE column, in one request. " +
+    "Same arguments and same response; prefer planka_find_cards.",
   inputSchema: {
     type: "object" as const,
-    properties: {
-      listId: { type: "string", description: "The list (column) ID" },
-      withLabels: {
-        type: "boolean",
-        description:
-          "Resolve label names (adds one board fetch). Default true.",
-      },
-      withDescription: {
-        type: "boolean",
-        description:
-          "Include a 200-char description preview per card. Default false — this is the expensive one.",
-      },
-      labelFilter: {
-        type: "string",
-        description:
-          "Only return cards carrying this label name (e.g. 'decidido'; case- and accent-insensitive). Implies withLabels.",
-      },
-      limit: {
-        type: "number",
-        description: "Max cards to return. Default 25, max 200.",
-      },
-      offset: {
-        type: "number",
-        description:
-          "Skip this many cards. Use the nextOffset from the previous response to page.",
-      },
-    },
+    properties: findCardsProperties,
     required: ["listId"],
   },
-  handler: withPlankaErrors(
-    async (params: {
-      listId: string;
-      withLabels?: boolean;
-      withDescription?: boolean;
-      labelFilter?: string;
-      limit?: number;
-      offset?: number;
-    }) => {
-      const result = await listCards(params);
-      const showLabels =
-        params.labelFilter !== undefined || params.withLabels !== false;
+  handler: findCardsTool.handler,
+};
 
-      return jsonResult({
-        listId: result.listId,
-        total: result.total,
-        returned: result.returned,
-        offset: result.offset,
-        hasMore: result.hasMore,
-        ...(result.nextOffset !== undefined
-          ? { nextOffset: result.nextOffset }
-          : {}),
-        ...(result.labelFilter
-          ? { labelFilter: result.labelFilter, totalInList: result.totalInList }
-          : {}),
-        ...(result.truncated
-          ? {
-              truncated: true,
-              note: "PLANKA stopped paginating this list; some cards may be missing.",
-            }
-          : {}),
-        cards: result.cards.map((c) => ({
-          id: c.id,
-          name: c.name,
-          ...(showLabels ? { labels: c.labelNames } : {}),
-          ...(c.taskCount > 0
-            ? { tasks: `${c.completedTaskCount}/${c.taskCount}` }
-            : {}),
-          ...(c.dueDate ? { dueDate: c.dueDate } : {}),
-          ...(c.isCompleted ? { isCompleted: true } : {}),
-          ...(params.withDescription && c.description
+/** Arguments shared by planka_board_summary and its planka_list_lists alias. */
+export interface BoardSummaryParams {
+  boardId?: string;
+  cardsFrom?: string[];
+  highlightLabel?: string;
+  limit?: number;
+}
+
+async function boardSummaryResult(params: BoardSummaryParams) {
+  const summary = await getBoardSummary(params);
+  return jsonResult({
+    board: { id: summary.board.id, name: summary.board.name },
+    lists: summary.lists,
+    labels: summary.labels,
+    totalCards: summary.totalCards,
+    excludesArchived: true,
+    ...(summary.warnings.length > 0 ? { warnings: summary.warnings } : {}),
+    ...(summary.cardsFrom.length > 0 || summary.total > 0
+      ? {
+          cardsFrom: summary.cardsFrom,
+          ...(summary.highlightLabel
             ? {
-                description:
-                  c.description.length > 200
-                    ? `${c.description.slice(0, 200)}…`
-                    : c.description,
+                highlightLabel: summary.highlightLabel,
+                highlightedCount: summary.highlightedCount,
               }
             : {}),
-        })),
-      });
-    }
-  ),
-};
-
-/**
- * Tool: planka_list_lists
- */
-export const listListsTool = {
-  name: "planka_list_lists",
-  description:
-    "Columns of a board with how many cards each one holds. The shape of a board, without the cards. " +
-    "planka_get_structure gives the same names but NOT the counts.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      boardId: { type: "string", description: "The board ID" },
-    },
-    required: ["boardId"],
-  },
-  handler: withPlankaErrors(async (params: { boardId: string }) => {
-    const result = await getBoardListCounts({ boardId: params.boardId });
-    return jsonResult({
-      board: { id: result.board.id, name: result.board.name },
-      totalCards: result.totalCards,
-      lists: result.lists,
-    });
-  }),
-};
+          total: summary.total,
+          returned: summary.returned,
+          hasMore: summary.hasMore,
+          cards: summary.cards,
+        }
+      : {}),
+  });
+}
 
 /**
  * Tool: planka_board_summary
@@ -170,22 +227,28 @@ export const listListsTool = {
 export const boardSummaryTool = {
   name: "planka_board_summary",
   description:
-    "The session opener: every column with its card count, every label, and the cards awaiting a decision, flagged by whether they already carry the unblocking label. " +
-    "The decision column is matched by name ('decision'/'decide'/'blocked', accent-insensitive) and the highlighted label defaults to 'decidido'; override both for other boards.",
+    "The session opener: every column with its card count and every label, in one call. " +
+    "Pass cardsFrom to also get the cards of those column(s) — with cardsFrom omitted (and no PLANKA_SUMMARY_DECISION_LISTS configured) it returns no cards at all. " +
+    "A cardsFrom entry or a highlightLabel that matches nothing comes back in `warnings`, never as a silent empty result. " +
+    "Archive and trash columns are not part of the answer (excludesArchived).",
   inputSchema: {
     type: "object" as const,
     properties: {
-      boardId: { type: "string", description: "The board ID" },
+      boardId: {
+        type: "string",
+        description:
+          "The board ID. Optional when the server has PLANKA_DEFAULT_BOARD_ID.",
+      },
       cardsFrom: {
         type: "array",
         items: { type: "string" },
         description:
-          "Which column(s) to return cards from: list IDs, or name fragments matched case- and accent-insensitively (e.g. ['decision'] or ['probalo','miralo']). Default: columns that look like a decision queue.",
+          "Which column(s) to return cards from: list IDs, or name fragments matched case- and accent-insensitively (e.g. ['blocked'] or ['review','testing']). [] means columns only. Default: PLANKA_SUMMARY_DECISION_LISTS, or no cards.",
       },
       highlightLabel: {
         type: "string",
         description:
-          "Label that marks a card as unblocked/ready. Default 'decidido'. Cards carrying it come first and get highlighted:true.",
+          "Label that marks a card as unblocked/ready: those cards come first and get highlighted:true. Default: PLANKA_SUMMARY_HIGHLIGHT_LABEL, or no highlighting.",
       },
       limit: {
         type: "number",
@@ -194,105 +257,32 @@ export const boardSummaryTool = {
     },
     required: ["boardId"],
   },
-  handler: withPlankaErrors(
-    async (params: {
-      boardId: string;
-      cardsFrom?: string[];
-      highlightLabel?: string;
-      limit?: number;
-    }) => {
-      const summary = await getBoardSummary(params);
-      return jsonResult({
-        board: { id: summary.board.id, name: summary.board.name },
-        lists: summary.lists,
-        labels: summary.labels,
-        cardsFrom: summary.cardsFrom,
-        highlightLabel: summary.highlightLabel,
-        highlightedCount: summary.highlightedCount,
-        total: summary.total,
-        returned: summary.returned,
-        hasMore: summary.hasMore,
-        cards: summary.cards.map((c) => ({
-          id: c.id,
-          name: c.name,
-          list: c.list,
-          labels: c.labels,
-          ...(c.highlighted ? { highlighted: true } : {}),
-        })),
-      });
-    }
+  handler: withPlankaErrors(async (params: BoardSummaryParams) =>
+    boardSummaryResult(params)
   ),
 };
 
 /**
- * Tool: planka_find_cards
+ * Tool: planka_list_lists — alias of planka_board_summary with cardsFrom: [].
  */
-export const findCardsTool = {
-  name: "planka_find_cards",
+export const listListsTool = {
+  name: "planka_list_lists",
   description:
-    "Search a board's cards by label and/or text, returning only the matches. " +
-    "Sweeps every card carrying a label, or checks whether a card about X already exists before you create a duplicate. " +
-    "At least one of labelName / query / listId is required.",
+    "Alias of planka_board_summary with cardsFrom: []: the columns of a board with their card counts, plus the board's labels, and no cards. " +
+    "Prefer planka_board_summary.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      boardId: { type: "string", description: "The board ID" },
-      labelName: {
+      boardId: {
         type: "string",
         description:
-          "Only cards carrying this label name (exact name, case- and accent-insensitive). If the board has no such label, the response says so and lists the ones it does have.",
-      },
-      query: {
-        type: "string",
-        description:
-          "Free text matched against card name AND description (substring, case- and accent-insensitive).",
-      },
-      listId: {
-        type: "string",
-        description: "Restrict the search to this list (column).",
-      },
-      withDescription: {
-        type: "boolean",
-        description:
-          "Include a 200-char description preview per match. Default false.",
-      },
-      limit: {
-        type: "number",
-        description: "Max matches to return. Default 25, max 200.",
-      },
-      offset: {
-        type: "number",
-        description:
-          "Skip this many matches. Use nextOffset from the previous response.",
+          "The board ID. Optional when the server has PLANKA_DEFAULT_BOARD_ID.",
       },
     },
     required: ["boardId"],
   },
-  handler: withPlankaErrors(
-    async (params: {
-      boardId: string;
-      labelName?: string;
-      query?: string;
-      listId?: string;
-      withDescription?: boolean;
-      limit?: number;
-      offset?: number;
-    }) => {
-      const result = await findCards(params);
-      return jsonResult({
-        boardId: result.boardId,
-        filters: result.filters,
-        total: result.total,
-        returned: result.returned,
-        offset: result.offset,
-        hasMore: result.hasMore,
-        ...(result.nextOffset !== undefined
-          ? { nextOffset: result.nextOffset }
-          : {}),
-        ...(result.warning ? { warning: result.warning } : {}),
-        matches: result.matches,
-      });
-    }
+  handler: withPlankaErrors(async (params: { boardId?: string }) =>
+    boardSummaryResult({ boardId: params.boardId, cardsFrom: [] })
   ),
 };
 

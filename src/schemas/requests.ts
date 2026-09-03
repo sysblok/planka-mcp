@@ -231,35 +231,73 @@ export type ListCardsInput = z.input<typeof ListCardsSchema>;
 
 export const BoardSummarySchema = z.object({
   boardId: optionalBoardId,
-  /** List names (fragment, accent- and case-insensitive) or list ids. */
+  /**
+   * List names (fragment, accent- and case-insensitive) or list ids. An empty
+   * array means "columns and labels only, no cards". Omitted, the server falls
+   * back to PLANKA_SUMMARY_DECISION_LISTS — and to no cards when that is unset.
+   */
   cardsFrom: z.array(z.string().min(1)).optional(),
-  /** Label flagged as highlighted on every card returned. */
-  highlightLabel: z.string().min(1).optional().default("decidido"),
+  /**
+   * Label flagged as highlighted on every card returned. Omitted, the server
+   * falls back to PLANKA_SUMMARY_HIGHLIGHT_LABEL — and to no highlighting when
+   * that is unset. No board vocabulary is hardcoded here.
+   */
+  highlightLabel: z.string().min(1).optional(),
   limit: limitField(50),
 });
 export type BoardSummaryInput = z.input<typeof BoardSummarySchema>;
 
+/** How much of each card comes back: a digest, or every field Planka gave. */
+export const CardDetailSchema = z.enum(["digest", "full"]);
+export type CardDetail = z.infer<typeof CardDetailSchema>;
+
+/** Description preview length used when `withDescription: true` says nothing else. */
+export const DEFAULT_DESCRIPTION_CHARS = 200;
+
 export const FindCardsSchema = z
   .object({
     boardId: optionalBoardId,
-    labelName: z.string().min(1).optional(),
-    query: z.string().min(1).optional(),
+    /** Exact list id: the cheap path (one GET on the list, never paginated). */
     listId: z.string().min(1).optional(),
-    withDescription: z.boolean().optional().default(false),
+    /** Column name fragment; resolved against the board's lists. */
+    listName: z.string().min(1).optional(),
+    labelName: z.string().min(1).optional(),
+    /** Alias of labelName, kept for callers written against planka_list_cards. */
+    labelFilter: z.string().min(1).optional(),
+    labelIds: z.array(z.string().min(1)).min(1).optional(),
+    userIds: z.array(z.string().min(1)).min(1).optional(),
+    query: z.string().min(1).optional(),
+    withLabels: z.boolean().optional().default(true),
+    detail: CardDetailSchema.optional().default("digest"),
+    withDescription: z.boolean().optional(),
+    /** Description preview length. 0 (the default) leaves descriptions out. */
+    descriptionChars: z.number().int().min(0).max(4000).optional(),
     limit: limitField(25),
     offset: offsetField,
   })
   .refine(
     (input) =>
       input.labelName !== undefined ||
+      input.labelFilter !== undefined ||
+      input.labelIds !== undefined ||
+      input.userIds !== undefined ||
       input.query !== undefined ||
-      input.listId !== undefined,
+      input.listId !== undefined ||
+      input.listName !== undefined,
     {
       message:
-        "give at least one filter: labelName, query or listId (an unfiltered search would return the whole board)",
+        "give at least one filter: listId, listName, query, labelName, labelIds or userIds (an unfiltered search would return the whole board)",
     }
   );
 export type FindCardsInput = z.input<typeof FindCardsSchema>;
+
+export const GetBoardSchema = z.object({
+  boardId: optionalBoardId,
+  includeTaskCounts: z.boolean().optional().default(true),
+  /** Cards returned across the whole board. Anything beyond it is reported. */
+  limit: limitField(50),
+});
+export type GetBoardInput = z.input<typeof GetBoardSchema>;
 
 // Attachment requests
 export const UploadAttachmentSchema = z.object({
@@ -272,5 +310,11 @@ export type UploadAttachmentInput = z.input<typeof UploadAttachmentSchema>;
 // Project requests
 export const GetStructureSchema = z.object({
   projectId: z.string().min(1).optional(),
+  /**
+   * Fetch each board's columns. Costs one board read per board (Planka has no
+   * per-board list endpoint); false answers projects and boards in a single
+   * GET /api/projects.
+   */
+  withLists: z.boolean().optional().default(true),
 });
 export type GetStructureInput = z.input<typeof GetStructureSchema>;

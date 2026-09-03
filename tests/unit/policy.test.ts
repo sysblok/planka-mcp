@@ -26,7 +26,24 @@ describe("parsePolicy", () => {
       readOnly: false,
       disabledTools: [],
       protectedListIds: [],
+      summaryHighlightLabel: null,
+      summaryDecisionLists: null,
     });
+  });
+
+  it("reads the board summary vocabulary from the environment", () => {
+    const policy = parsePolicy({
+      PLANKA_SUMMARY_HIGHLIGHT_LABEL: " decidido ",
+      PLANKA_SUMMARY_DECISION_LISTS: "decision, probalo ,,",
+    });
+    expect(policy.summaryHighlightLabel).toBe("decidido");
+    expect(policy.summaryDecisionLists).toEqual(["decision", "probalo"]);
+  });
+
+  it("refuses a summary list variable that lists nothing", () => {
+    expect(() =>
+      parsePolicy({ PLANKA_SUMMARY_DECISION_LISTS: " , " })
+    ).toThrow(/PLANKA_SUMMARY_DECISION_LISTS is set but lists no value/);
   });
 
   it("parses ids as CSV, trimming blanks", () => {

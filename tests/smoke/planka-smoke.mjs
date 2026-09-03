@@ -446,7 +446,7 @@ async function run() {
   });
   check(
     "planka_list_cards with labelFilter finds the card",
-    filtered?.cards?.some((card) => card.id === cardId),
+    filtered?.matches?.some((card) => card.id === cardId),
     filtered
   );
 
@@ -464,6 +464,16 @@ async function run() {
     allCards
   );
 
+  // The list show answers the whole column in one request: `truncated` is
+  // false by construction and `total` is the real size of the column.
+  check(
+    "planka_find_cards with listId reads the column whole, not a page of it",
+    allCards?.source === "list" &&
+      allCards?.truncated === false &&
+      allCards?.list?.id === list.id,
+    allCards
+  );
+
   const rawListCards = await api.get(`/api/lists/${list.id}/cards`);
   check(
     "the count matches the raw API (or exceeds one page, which is the point)",
@@ -471,10 +481,18 @@ async function run() {
     `mcp total=${totalInList} · raw first page=${rawListCards.items?.length}`
   );
 
+  // Cross-check against the list show, which carries every card of the column.
+  const rawListShow = await api.get(`/api/lists/${list.id}`);
+  check(
+    "planka_find_cards total equals the real size of the column (raw list show)",
+    totalInList === (rawListShow.included?.cards?.length ?? -1),
+    `mcp total=${totalInList} · raw list show=${rawListShow.included?.cards?.length}`
+  );
+
   check(
     "planka_list_cards omits descriptions by default",
-    allCards?.cards?.every((card) => card.description === undefined),
-    allCards?.cards?.[0]
+    allCards?.matches?.every((card) => card.description === undefined),
+    allCards?.matches?.[0]
   );
 
   const page = await json("planka_list_cards", {
@@ -502,7 +520,7 @@ async function run() {
       "planka_list_cards with an offset returns the next card, not the same one",
       next?.returned === 1 &&
         next.offset === 1 &&
-        next.cards[0].id !== page.cards[0].id,
+        next.matches[0].id !== page.matches[0].id,
       next
     );
   } else {
@@ -521,6 +539,23 @@ async function run() {
       !JSON.stringify(lists).includes(CARD_NAME) &&
       lists.lists.every((item) => item.name !== null),
     lists
+  );
+
+  check(
+    "planka_board_summary warns instead of answering an empty cardsFrom",
+    await (async () => {
+      const typo = await json("planka_board_summary", {
+        boardId,
+        cardsFrom: [`${PREFIX} no such column`],
+      });
+      return (
+        Array.isArray(typo?.warnings) &&
+        typo.warnings.join(" ").includes(`${PREFIX} no such column`) &&
+        typo.warnings.join(" ").includes(list.name) &&
+        (typo.cards === undefined || typo.cards.length === 0)
+      );
+    })(),
+    "cardsFrom typo must come back as a warning, never as an empty column"
   );
 
   check(
@@ -582,7 +617,7 @@ async function run() {
     "planka_find_cards by label returns exactly the labelled card",
     byLabel?.total === 1 &&
       byLabel.matches[0].id === cardId &&
-      byLabel.matches[0].list === list.name,
+      byLabel.matches[0].listName === list.name,
     byLabel
   );
 
@@ -606,7 +641,8 @@ async function run() {
   check(
     "planka_find_cards with listId stays inside that column",
     scoped?.matches?.length > 0 &&
-      scoped.matches.every((card) => card.listId === list.id),
+      scoped.list?.id === list.id &&
+      scoped.source === "list",
     scoped
   );
 
@@ -617,9 +653,9 @@ async function run() {
   check(
     "planka_find_cards warns when the label does not exist and lists the ones that do",
     noLabel?.total === 0 &&
-      typeof noLabel.warning === "string" &&
-      noLabel.warning.includes(`${PREFIX} B`),
-    noLabel?.warning
+      Array.isArray(noLabel.warnings) &&
+      noLabel.warnings.join(" ").includes(`${PREFIX} B`),
+    noLabel?.warnings
   );
 
   const noFilter = await callTool("planka_find_cards", { boardId });

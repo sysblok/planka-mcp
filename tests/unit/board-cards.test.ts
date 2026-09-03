@@ -64,10 +64,30 @@ describe("getCardsForList", () => {
     expect(mocks.get).toHaveBeenCalledTimes(1);
   });
 
-  it("stops after one page when the list is shorter than a page", async () => {
-    mocks.get.mockResolvedValueOnce(page(1, 3));
+  it("derives the page size instead of assuming 50", async () => {
+    // An instance answering 20 per page: assuming 50 would stop on page one
+    // and report 20 of 37 cards as the whole column, with truncated: false.
+    mocks.get
+      .mockResolvedValueOnce(page(1, 20))
+      .mockResolvedValueOnce(page(21, 17));
+
+    const result = await getCardsForList({ listId: "list-1", withLabels: false });
+
+    expect(result.cards).toHaveLength(37);
+    expect(result.truncated).toBe(false);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("confirms the end of a short list instead of guessing it", async () => {
+    // 3 cards could be a whole column or a 3-per-page instance: the only
+    // honest way to tell them apart is to ask for the next page.
+    mocks.get
+      .mockResolvedValueOnce(page(1, 3))
+      .mockResolvedValueOnce({ items: [], included: {} });
+
     const result = await getCardsForList({ listId: "list-1", withLabels: false });
     expect(result.cards).toHaveLength(3);
-    expect(mocks.get).toHaveBeenCalledTimes(1);
+    expect(result.truncated).toBe(false);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
   });
 });

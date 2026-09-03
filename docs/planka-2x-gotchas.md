@@ -87,10 +87,19 @@ card of the previous page:
 GET /api/lists/<LIST_ID>/cards?before[id]=<LAST_CARD_ID>&before[listChangedAt]=<LAST_CARD_listChangedAt>
 ```
 
-This fork follows that cursor until a page comes back short, capped at 20 pages.
-When it stops early, or when the last card has no `listChangedAt` and no cursor
-can be built, `planka_list_cards` returns `truncated: true` with a note. It says
-it did not see everything rather than pretending it did.
+This fork follows that cursor until a page comes back short, capped at 20 pages,
+and the page size is **derived from the first response, never assumed**: an
+instance answering 20 per page would otherwise stop on page one and report a
+third of the column as the whole of it. When pagination stops early, or when the
+last card has no `listChangedAt` and no cursor can be built, the result carries
+`truncated: true` with a note. It says it did not see everything rather than
+pretending it did.
+
+`planka_find_cards` with a `listId` avoids the cursor entirely: `GET
+/api/lists/:id` returns **every card of the column in one response**, so the
+answer is `truncated: false` by construction and `total` is the real size of the
+column. Verified on Planka 2.2.1 against a column of 159 cards — one request
+where the cursor needed four.
 
 Why it matters: an incomplete list looks exactly like a complete one.
 
@@ -166,6 +175,23 @@ links, this fork filters board-level searches locally over that one request.
 Issuing one search per list would be N extra round-trips for data already in
 hand. What stays small in `planka_find_cards` and `planka_board_summary` is the
 **output**, which is what a model pays for.
+
+### The board read has no archive and no trash
+
+`GET /api/boards/:id` carries every card of the FINITE lists — the ones typed
+`active` or `closed`. The `archive` and `trash` lists come back with
+`name: null`, `position: null` and **without a single card**. There is no
+parameter to include them, and no `GET /api/boards/:id/cards` to ask again.
+
+So every read built on the board show — `planka_board_summary`,
+`planka_find_cards` without a `listId`, `planka_get_board`, `planka_list_lists` —
+describes the **visible** board, not everything Planka stores. A card someone
+archived is not "gone": it is outside what these tools can see. They all say so
+with `excludesArchived: true` rather than letting a zero pass for a fact.
+
+Verified on Planka 2.2.1: a board whose show reports 185 cards across 8 named
+columns also carries two nameless lists (`archive`, `trash`) with no cards
+attached to them anywhere in the payload.
 
 ### A projectId where a boardId goes returns a bare 404
 

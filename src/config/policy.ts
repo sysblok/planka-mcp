@@ -25,6 +25,16 @@ export interface AccessPolicy {
   disabledTools: string[];
   /** Lists that must not receive cards nor be edited/deleted. */
   protectedListIds: string[];
+  /**
+   * Label that `planka_board_summary` flags as "unblocked". `null` = none: the
+   * server ships no board-specific vocabulary of its own.
+   */
+  summaryHighlightLabel: string | null;
+  /**
+   * Columns `planka_board_summary` returns cards from when the call does not
+   * say. `null` = none: the summary answers columns and labels only.
+   */
+  summaryDecisionLists: string[] | null;
 }
 
 /**
@@ -64,6 +74,27 @@ function parseCsv(raw: string | undefined): string[] | null {
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+  return entries;
+}
+
+/** A trimmed string env var, or null when unset/blank. */
+function parseOptionalString(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  return value ? value : null;
+}
+
+/** A CSV env var that, when present, must list at least one entry. */
+function parseNonEmptyCsv(
+  name: string,
+  raw: string | undefined
+): string[] | null {
+  const entries = parseCsv(raw);
+  if (entries === null) return null;
+  if (entries.length === 0) {
+    throw new PlankaConfigError(
+      `${name} is set but lists no value. Remove it, or list the entries (comma-separated).`
+    );
+  }
   return entries;
 }
 
@@ -128,6 +159,13 @@ export function parsePolicy(env: NodeJS.ProcessEnv): AccessPolicy {
       normalizeToolName
     ),
     protectedListIds: parseCsv(env.PLANKA_PROTECTED_LIST_IDS) ?? [],
+    summaryHighlightLabel: parseOptionalString(
+      env.PLANKA_SUMMARY_HIGHLIGHT_LABEL
+    ),
+    summaryDecisionLists: parseNonEmptyCsv(
+      "PLANKA_SUMMARY_DECISION_LISTS",
+      env.PLANKA_SUMMARY_DECISION_LISTS
+    ),
   };
 }
 

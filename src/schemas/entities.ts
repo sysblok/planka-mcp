@@ -120,6 +120,15 @@ export const CardSchema = z.object({
   dueDate: z.string().nullable().optional(),
   isDueDateCompleted: z.boolean().optional(),
   isCompleted: z.boolean().optional(),
+  /**
+   * Planka 2.x names for the two flags above. The API row carries
+   * `isDueCompleted` and `isClosed`; the 1.x-era aliases stay for callers that
+   * still read them.
+   */
+  isDueCompleted: z.boolean().nullable().optional(),
+  isClosed: z.boolean().nullable().optional(),
+  /** Number of comments on the card. Planka computes it; reads never page it. */
+  commentsTotal: z.number().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().nullable().optional(),
   /**
@@ -184,6 +193,16 @@ export const CardLabelSchema = z.object({
   updatedAt: z.string().nullable().optional(),
 });
 export type CardLabel = z.infer<typeof CardLabelSchema>;
+
+// Card-Member relationship (junction table)
+export const CardMembershipSchema = z.object({
+  id: z.string(),
+  cardId: z.string(),
+  userId: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().nullable().optional(),
+});
+export type CardMembership = z.infer<typeof CardMembershipSchema>;
 
 // Comment schema
 export const CommentSchema = z.object({

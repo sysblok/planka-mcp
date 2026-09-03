@@ -75,11 +75,16 @@ export function applyAllowlists(
 
 /**
  * Get the full structure: projects -> boards -> lists.
+ *
+ * `GET /api/projects` already carries every visible board, so with
+ * `withLists: false` the whole structure is ONE request. With lists (the
+ * default, kept so existing callers keep their column IDs) it costs one board
+ * read per board — the N+1 that `planka_board_summary` avoids.
  */
 export async function getStructure(
   input: GetStructureInput = {}
 ): Promise<ProjectStructure[]> {
-  const { projectId } = parseInput(GetStructureSchema, input);
+  const { projectId, withLists } = parseInput(GetStructureSchema, input);
 
   // Outside the allowlist: say so instead of answering an empty structure.
   if (projectId) assertProjectAllowed(projectId);
@@ -112,6 +117,14 @@ export async function getStructure(
     const boardsWithLists: ProjectStructure["boards"] = [];
 
     for (const board of projectBoards) {
+      // Planka has no per-board list endpoint: the columns only come inside a
+      // full board read (every card, every attachment). One per board — so it
+      // only happens when the caller asked for the lists.
+      if (!withLists) {
+        boardsWithLists.push({ board, lists: [] });
+        continue;
+      }
+
       // Get board details to get lists
       const boardResponse = await plankaClient.get<unknown>(
         `/api/boards/${board.id}`
