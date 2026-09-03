@@ -30,53 +30,87 @@ Claude Code carga los servidores MCP al iniciar una sesión, así que reinicialo
 
 ## Requisitos
 
-- Node.js 18 o posterior y `npm`
+- Node.js 18 o posterior y `npx`
 - Una instancia Planka 2.x accesible
 - Un usuario dedicado de Planka que pueda ver el proyecto y board elegidos
-- Claude Code instalado y disponible como `claude`
+- Un cliente MCP: Claude Code, Codex CLI, Cursor o VS Code
 - Rol de project manager sólo si el setup debe crear un board
 
 Funciona en Linux y macOS. Bun no es un requisito.
 
-## Instalación en 5 minutos
+## Instalación
 
-Cloná el repo y ejecutá el instalador guiado:
+Un comando por cliente. Todos corren el paquete publicado con `npx`: no hay que
+clonar nada ni compilar nada.
+
+| Cliente | One-liner |
+|---|---|
+| **Claude Code** (plugin: MCP + skills + preflight) | `/plugin marketplace add omnicoreos/planka-mcp` y después `/plugin install planka@planka-mcp` |
+| **Claude Code** (sólo el server) | `claude mcp add --scope user --transport stdio planka --env PLANKA_BASE_URL=https://planka.example.com --env PLANKA_API_KEY=<key> -- npx -y @omnicoreos/planka-mcp` |
+| **Codex CLI** | `codex mcp add planka -- npx -y @omnicoreos/planka-mcp` (después el bloque `env`, más abajo) |
+| **Cursor** | [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=planka&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvbW5pY29yZW9zL3BsYW5rYS1tY3AiXSwiZW52Ijp7IlBMQU5LQV9CQVNFX1VSTCI6Imh0dHBzOi8vcGxhbmthLmV4YW1wbGUuY29tIiwiUExBTktBX0FQSV9LRVkiOiI8eW91ci1wbGFua2EtYXBpLWtleT4ifX0=) |
+| **VS Code** | [![Add to VS Code](https://img.shields.io/badge/VS_Code-Add_planka-0098FF)](https://insiders.vscode.dev/redirect/mcp/install?name=planka&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40omnicoreos%2Fplanka-mcp%22%5D%2C%22env%22%3A%7B%22PLANKA_BASE_URL%22%3A%22https%3A%2F%2Fplanka.example.com%22%2C%22PLANKA_API_KEY%22%3A%22%3Cyour-planka-api-key%3E%22%7D%2C%22type%22%3A%22stdio%22%7D) |
+| **Cualquiera, guiado** | `npx @omnicoreos/planka-mcp init --client claude\|codex\|cursor\|vscode\|print` |
+
+Los links de Cursor y VS Code llevan una key de ejemplo, nunca una real: un
+deeplink queda en el historial del navegador. Los dos clientes piden la
+credencial ellos mismos — VS Code con un input `promptString`, así el
+`.vscode/mcp.json` commiteado no tiene ningún secreto.
+
+### `planka-mcp init`
 
 ```bash
-git clone https://github.com/omnicoreos/planka-mcp.git
-cd planka-mcp
-./scripts/setup.sh
+npx @omnicoreos/planka-mcp init --client claude     # claude mcp add, scope user
+npx @omnicoreos/planka-mcp init --client codex      # agrega el bloque a ~/.codex/config.toml
+npx @omnicoreos/planka-mcp init --client cursor     # mergea ~/.cursor/mcp.json (0600) + imprime el deeplink
+npx @omnicoreos/planka-mcp init --client vscode     # escribe .vscode/mcp.json pidiendo el secreto
+npx @omnicoreos/planka-mcp init --client print      # imprime todos los snippets, no escribe nada
 ```
 
-El setup pide la URL de Planka, email o usuario del agente y password. Valida esas
-credenciales antes de escribir configuración, permite elegir o crear un board y
-ejecuta un smoke real de crear, etiquetar, comentar y borrar una card.
+Con terminal pregunta lo que le falta; `--base-url`, `--api-key`, `--board`,
+`--email` y `--password` lo vuelven no interactivo. Antes de escribir nada hace
+un `GET /api/users/me` autenticado: eso es lo que detecta una base URL que
+apunta al SPA en vez de a la API, o una credencial que nunca funcionó.
+`--dry-run` imprime el cambio exacto y no toca nada.
 
-Ofrece dos formas de configurar Claude Code:
+Todos los emisores mergean: si ya existe una entrada `planka` la reporta y la
+deja como está, y conserva los demás servers del mismo archivo. Lo que escribe
+en tu home queda con modo `0600`.
 
-| Opción | Cuándo usarla | Dónde vive |
-|---|---|---|
-| `claude mcp add` | Querés la instalación personal más simple | Configuración de usuario de Claude Code |
-| `.mcp.json` de proyecto | Un equipo debe compartir la entrada del servidor | `<TU_PROYECTO>/.mcp.json`, se puede commitear |
+`./scripts/setup.sh` es un alias de `init --client claude`. El instalador
+guiado viejo — el que además elige o crea un board y corre el smoke completo de
+create/label/comment/delete — sigue siendo `node scripts/setup.mjs`.
 
-En ambos casos, el setup guarda las credenciales fuera de Git en
-`~/.config/planka-mcp/config.json` con modo `0600` y crea el launcher privado
-`~/.local/bin/planka-mcp`. La configuración compartida no contiene el password:
+### El plugin de Claude Code
 
-```json
-{
-  "mcpServers": {
-    "planka": {
-      "type": "stdio",
-      "command": "${HOME}/.local/bin/planka-mcp",
-      "args": []
-    }
-  }
-}
+El plugin instala el MCP server, las dos skills del workflow y un preflight de
+`SessionStart` que detecta una credencial faltante o una base URL `http://`
+antes de la primera tool call:
+
+```text
+/plugin marketplace add omnicoreos/planka-mcp
+/plugin install planka@planka-mcp
 ```
 
-Podés volver a ejecutar el instalador. Actualiza la entrada `planka`, reutiliza las
-listas y labels existentes del método y borra la card temporal del smoke test.
+Claude Code pide la base URL y la API key al habilitar el plugin y guarda la
+key en el keychain del sistema, no en `settings.json`. Codex lee el mismo
+repositorio vía `.codex-plugin/plugin.json` y `.agents/plugins/marketplace.json`.
+
+Los plugins no pueden traer reglas de permisos, y eso es lo único que no viaja:
+usá `PLANKA_READ_ONLY` y `PLANKA_DISABLED_TOOLS` (más abajo) en vez de una deny
+list del cliente — funcionan en todos los runtimes y no cuestan contexto.
+
+### Bloque `env` de Codex
+
+`codex mcp add` no toma credenciales, así que van en `~/.codex/config.toml` (o
+dejá que lo haga `init --client codex`):
+
+```toml
+[mcp_servers.planka]
+command = "npx"
+args = ["-y", "@omnicoreos/planka-mcp"]
+env = { PLANKA_BASE_URL = "https://planka.example.com", PLANKA_API_KEY = "<key>" }
+```
 
 ## Verificá que funciona
 
@@ -87,8 +121,11 @@ claude mcp list
 claude mcp get planka
 ```
 
-Después cerrá y volvé a abrir Claude Code por completo. Si elegiste `.mcp.json`,
-abrí Claude Code dentro de ese proyecto y aprobá el servidor de proyecto cuando lo pida.
+Después cerrá y volvé a abrir Claude Code por completo — los MCP se cargan al
+arrancar la sesión. Si configuraste el server en el `.mcp.json` de un proyecto,
+abrí Claude Code dentro de ese proyecto y aprobá el servidor cuando lo pida. Si
+instalaste el plugin, `/plugin` lo muestra, y su pestaña **Errors** muestra un
+server que no arrancó.
 
 Pedile a Claude Code:
 
@@ -304,6 +341,34 @@ heredar los defaults pesimistas de la spec, más las dos claves `_meta` que
 Claude Code sí usa: confirmación forzada en las tools que borran datos y un tope
 de salida más alto en `planka_view_attachment`. Detalle en
 [Server instructions and annotations](docs/tools.md#server-instructions-and-annotations).
+
+## Resources y prompts
+
+Dos superficies más, y las dos cuestan cero hasta que alguien las pide: por eso
+la guía larga vive acá y no en las instructions, que se pagan en cada sesión.
+Claude Code lee las dos; Cursor también; Codex no soporta ninguna, así que nada
+de esto es imprescindible.
+
+**Resources** sirven las guías que viajan dentro del paquete. En Claude Code se
+traen con `@`, en Cursor desde el selector de resources:
+
+| URI | Qué es |
+|---|---|
+| `planka://workflow/readme` | El workflow opcional del board: columnas, labels, quién mueve qué |
+| `planka://workflow/board-template` | Las columnas y labels para crear en un board nuevo |
+| `planka://workflow/skills/orchestrator` | La skill de director, tal cual |
+| `planka://workflow/skills/close-card` | La skill de cierre, tal cual |
+| `planka://gotchas/planka-2x` | Cómo se comporta Planka 2.x cuando una llamada contesta algo sin sentido |
+| `planka://labels/colors` | Todos los colores que acepta `planka_manage_labels`, generados del schema |
+
+**Prompts** son tres formas de arrancar; Claude Code las expone como
+`/mcp__planka__<nombre>`:
+
+| Prompt | Argumentos | Qué hace |
+|---|---|---|
+| `planka-open-session` | `boardId?`, `since?` | Summary, después lo que se movió, después las columnas que importan — en ese orden |
+| `planka-close-card` | `cardId`, `listId?` | Leer el hilo entero, escribir un cierre honesto, mover la card y chequear `verified` |
+| `planka-board-triage` | `boardId?`, `lists?` | Recorrer las columnas que esperan a una persona y volver cada card una pregunta |
 
 ## Flujo de agentes opcional
 

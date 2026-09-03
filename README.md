@@ -30,53 +30,88 @@ Claude Code loads MCP servers when a session starts, so restart it after setup o
 
 ## Requirements
 
-- Node.js 18 or newer and `npm`
+- Node.js 18 or newer and `npx`
 - A reachable Planka 2.x instance
 - A dedicated Planka user that can see the target project and board
-- Claude Code installed and available as `claude`
+- One MCP client: Claude Code, Codex CLI, Cursor or VS Code
 - A project-manager role only if setup must create a board
 
 Linux and macOS are supported. No Bun runtime is required.
 
-## Install in 5 minutes
+## Install
 
-Clone the repository and run the guided installer:
+One command per client. All of them run the published package with `npx`, so
+there is nothing to clone and nothing to build.
+
+| Client | One-liner |
+|---|---|
+| **Claude Code** (plugin: MCP + skills + preflight) | `/plugin marketplace add omnicoreos/planka-mcp` then `/plugin install planka@planka-mcp` |
+| **Claude Code** (server only) | `claude mcp add --scope user --transport stdio planka --env PLANKA_BASE_URL=https://planka.example.com --env PLANKA_API_KEY=<key> -- npx -y @omnicoreos/planka-mcp` |
+| **Codex CLI** | `codex mcp add planka -- npx -y @omnicoreos/planka-mcp` (then add the `env` block, below) |
+| **Cursor** | [![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](cursor://anysphere.cursor-deeplink/mcp/install?name=planka&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBvbW5pY29yZW9zL3BsYW5rYS1tY3AiXSwiZW52Ijp7IlBMQU5LQV9CQVNFX1VSTCI6Imh0dHBzOi8vcGxhbmthLmV4YW1wbGUuY29tIiwiUExBTktBX0FQSV9LRVkiOiI8eW91ci1wbGFua2EtYXBpLWtleT4ifX0=) |
+| **VS Code** | [![Add to VS Code](https://img.shields.io/badge/VS_Code-Add_planka-0098FF)](https://insiders.vscode.dev/redirect/mcp/install?name=planka&config=%7B%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40omnicoreos%2Fplanka-mcp%22%5D%2C%22env%22%3A%7B%22PLANKA_BASE_URL%22%3A%22https%3A%2F%2Fplanka.example.com%22%2C%22PLANKA_API_KEY%22%3A%22%3Cyour-planka-api-key%3E%22%7D%2C%22type%22%3A%22stdio%22%7D) |
+| **Any of them, guided** | `npx @omnicoreos/planka-mcp init --client claude\|codex\|cursor\|vscode\|print` |
+
+The Cursor and VS Code links carry a placeholder key, never a real one: a
+deeplink ends up in browser history. Both clients ask for the credential
+themselves — VS Code through a `promptString` input, so the committed
+`.vscode/mcp.json` holds no secret.
+
+### `planka-mcp init`
 
 ```bash
-git clone https://github.com/omnicoreos/planka-mcp.git
-cd planka-mcp
-./scripts/setup.sh
+npx @omnicoreos/planka-mcp init --client claude     # claude mcp add, user scope
+npx @omnicoreos/planka-mcp init --client codex      # appends to ~/.codex/config.toml
+npx @omnicoreos/planka-mcp init --client cursor     # merges ~/.cursor/mcp.json (0600) + prints the deeplink
+npx @omnicoreos/planka-mcp init --client vscode     # writes .vscode/mcp.json with a secret prompt
+npx @omnicoreos/planka-mcp init --client print      # prints every snippet, writes nothing
 ```
 
-Setup asks for the Planka URL, agent email or username, and password. It validates
-those credentials before writing configuration, lets you select or create a board,
-and then runs a real create/label/comment/delete smoke test.
+With a terminal attached it asks for what it needs; `--base-url`, `--api-key`,
+`--board`, `--email` and `--password` make it non-interactive. Before writing
+anything it runs one authenticated `GET /api/users/me`, which is what catches a
+base URL pointing at the SPA instead of the API, or a credential that never
+worked. `--dry-run` prints the exact change and touches nothing.
 
-It offers two Claude Code configurations:
+Every emitter merges: an existing `planka` entry is reported and left alone,
+and the other servers in the same file are preserved. Files written into your
+home directory get mode `0600`.
 
-| Choice | Use it when | Where it lives |
-|---|---|---|
-| `claude mcp add` | You want the easiest personal setup | Claude Code user configuration |
-| Project `.mcp.json` | A team should share the server entry | `<YOUR_PROJECT>/.mcp.json`, safe to commit |
+`./scripts/setup.sh` is an alias for `init --client claude`. The older guided
+installer — the one that also picks or creates a board and runs the full
+create/label/comment/delete smoke test — is still `node scripts/setup.mjs`.
 
-In both cases, setup stores credentials outside Git in
-`~/.config/planka-mcp/config.json` with mode `0600` and creates the private launcher
-`~/.local/bin/planka-mcp`. A generated team configuration contains no password:
+### The Claude Code plugin
 
-```json
-{
-  "mcpServers": {
-    "planka": {
-      "type": "stdio",
-      "command": "${HOME}/.local/bin/planka-mcp",
-      "args": []
-    }
-  }
-}
+The plugin installs the MCP server, the two workflow skills, and a `SessionStart`
+preflight that catches a missing credential or an `http://` base URL before the
+first tool call:
+
+```text
+/plugin marketplace add omnicoreos/planka-mcp
+/plugin install planka@planka-mcp
 ```
 
-The installer is safe to rerun. It updates the `planka` entry, reuses existing
-workflow lists and labels, and deletes its temporary smoke-test card.
+Claude Code asks for the base URL and the API key when the plugin is enabled and
+stores the key in the OS keychain, not in `settings.json`. Codex reads the same
+repository through `.codex-plugin/plugin.json` and
+`.agents/plugins/marketplace.json`.
+
+Plugins cannot ship permission rules, which is the one thing that does not
+travel: use `PLANKA_READ_ONLY` and `PLANKA_DISABLED_TOOLS` (below) instead of a
+client-side deny list — they work in every runtime and cost no context.
+
+### Codex `env` block
+
+`codex mcp add` does not take credentials, so add them to
+`~/.codex/config.toml` (or let `init --client codex` do it):
+
+```toml
+[mcp_servers.planka]
+command = "npx"
+args = ["-y", "@omnicoreos/planka-mcp"]
+env = { PLANKA_BASE_URL = "https://planka.example.com", PLANKA_API_KEY = "<key>" }
+```
 
 ## Verify it works
 
@@ -87,8 +122,11 @@ claude mcp list
 claude mcp get planka
 ```
 
-Then fully restart Claude Code. If you chose `.mcp.json`, open Claude Code in that
-project and approve the project-scoped server when prompted.
+Then fully restart Claude Code — MCP servers are loaded when a session starts. If
+you configured the server in a project's `.mcp.json`, open Claude Code in that
+project and approve the project-scoped server when prompted. If you installed the
+plugin, `/plugin` shows it, and its **Errors** tab shows a server that failed to
+start.
 
 Ask Claude Code:
 
@@ -302,6 +340,34 @@ explicitly, rather than inheriting the spec's pessimistic defaults, plus the two
 `_meta` keys Claude Code acts on: a forced confirmation prompt on the tools that
 delete data, and a raised output ceiling on `planka_view_attachment`. Details in
 [Server instructions and annotations](docs/tools.md#server-instructions-and-annotations).
+
+## Resources and prompts
+
+Two more surfaces, and both cost nothing until something asks for them, which is
+why the long-form guidance lives here instead of in the instructions everyone
+pays for on every session. Claude Code reads both; Cursor reads both; Codex
+supports neither, so nothing here is load-bearing.
+
+**Resources** serve the guides that ship inside the package. In Claude Code they
+are `@`-mentioned, in Cursor they come from the resource picker:
+
+| URI | What it is |
+|---|---|
+| `planka://workflow/readme` | The optional board workflow: columns, labels, who moves what |
+| `planka://workflow/board-template` | The columns and labels to create on a fresh board |
+| `planka://workflow/skills/orchestrator` | The director skill, verbatim |
+| `planka://workflow/skills/close-card` | The closing skill, verbatim |
+| `planka://gotchas/planka-2x` | How Planka 2.x actually behaves when a call answers nonsense |
+| `planka://labels/colors` | Every color `planka_manage_labels` accepts, generated from the schema |
+
+**Prompts** are three ways to start, surfaced by Claude Code as
+`/mcp__planka__<name>`:
+
+| Prompt | Arguments | What it does |
+|---|---|---|
+| `planka-open-session` | `boardId?`, `since?` | Summary, then recent movement, then the columns that matter — in that order |
+| `planka-close-card` | `cardId`, `listId?` | Read the whole thread, write an honest closing comment, move it, check `verified` |
+| `planka-board-triage` | `boardId?`, `lists?` | Walk the columns waiting on a person and turn each card into one question |
 
 ## Optional agent workflow
 

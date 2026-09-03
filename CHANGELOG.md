@@ -6,6 +6,53 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **The repository is now a plugin, for Claude Code and for Codex.**
+  `.claude-plugin/plugin.json` and `.codex-plugin/plugin.json` install the MCP
+  server plus the two `workflow/skills/` in one step, and the repo is its own
+  marketplace (`.claude-plugin/marketplace.json`,
+  `.agents/plugins/marketplace.json`):
+  `/plugin marketplace add omnicoreos/planka-mcp` → `/plugin install planka@planka-mcp`.
+  `userConfig` asks for the base URL and the API key when the plugin is enabled
+  and stores the key in the OS keychain — the manifest itself holds no secret,
+  only `${user_config.*}` substitutions. Claude Code reads `.mcp.json`
+  (`mcpServers`), Codex reads `.codex-plugin/mcp.json` (`mcp_servers`); the two
+  files exist because the wrapper key differs and one file cannot be both
+  without Codex reading a server literally named `mcpServers`. Validated with
+  `claude plugin validate --strict`.
+- **A `SessionStart` preflight** (`hooks/preflight.mjs`): catches a Node older
+  than 18, a missing credential, an API key set together with email+password,
+  and an `http://` base URL that a redirect would turn into a dropped POST body.
+  Offline, silent when everything is fine, and it never exits non-zero — a
+  broken preflight must not block a session. `PLANKA_MCP_PREFLIGHT=full` also
+  spawns the server and waits for its banner.
+- **MCP resources** (`src/resources.ts`): `planka://workflow/readme`,
+  `planka://workflow/board-template`, `planka://workflow/skills/orchestrator`,
+  `planka://workflow/skills/close-card`, `planka://gotchas/planka-2x` and
+  `planka://labels/colors`. The first five are read from the tarball at runtime
+  (resolved from `import.meta.url`, with a note pointing at the repository if an
+  install trimmed them); the last is generated from `LabelColorSchema`, so the
+  43 colors can never drift from what the tools validate. A resource costs
+  nothing until it is read, which is where the 25 000 chars of `workflow/` and
+  `docs/` belong — not in `instructions`, which every session pays for.
+- **MCP prompts** (`src/prompts.ts`): `planka-open-session`,
+  `planka-close-card` and `planka-board-triage`, surfaced by Claude Code as
+  `/mcp__planka__…`. Each orders the calls and says what to look at in the
+  answers, without restating what tool descriptions already say. Arguments are
+  optional except `cardId`, and a missing required argument is refused by name.
+- **`planka-mcp init --client claude|codex|cursor|vscode|print`**: one setup
+  command for every client. Emits `claude mcp add`, a `[mcp_servers.planka]`
+  TOML block, a merged `~/.cursor/mcp.json` plus an "Add to Cursor" deeplink,
+  and a `.vscode/mcp.json` whose key is a `promptString` input rather than a
+  literal. Every emitter merges non-destructively — an existing `planka` entry
+  is reported and left alone — files written into `$HOME` get mode `0600`, and
+  no printed snippet or deeplink ever carries a real credential. Before writing
+  it runs one authenticated `GET /api/users/me`, which is the check that catches
+  a base URL pointing at the SPA instead of the API. `--dry-run` writes nothing;
+  `--client print` needs no credentials at all.
+- README and README.es: an **Install** table with a one-liner per client
+  (Claude Code plugin and server, Codex, Cursor badge, VS Code badge, `init`)
+  and a **Resources and prompts** section.
+
 - **`planka_get_card` is a digest with detail on demand.** By default it returns
   counts and names instead of the whole record: `listName` next to `listId`,
   label **names** with their ids, `members`, tasks as `{done, total, lists:[…]}`
@@ -97,7 +144,6 @@ All notable changes to this project are documented here.
   there and back, both directions cross-checked against the raw API) and
   `verified: true` assertions on every write.
 
-
 - **Board reads redesigned around one principle: a small digest by default, the
   detail through parameters.** `planka_find_cards` is now the single read over
   cards and takes `listId`, `listName`, `query`, `labelName` (alias
@@ -146,6 +192,26 @@ All notable changes to this project are documented here.
   the tool count and every tool name are unchanged.
 
 ### Changed
+
+- `scripts/setup.sh` is now an alias for `init --client claude`. The guided
+  installer that also picks or creates a board and runs the full write smoke
+  stays available as `node scripts/setup.mjs`.
+- `workflow/skills/*/SKILL.md`: frontmatter trimmed to the portable
+  agentskills.io subset (`version:` moved under `metadata:`), and the bodies
+  updated to the current read surface — `board_summary` as the only opening
+  read, `find_cards` with a `listId` for a whole column, `get_card` as a digest
+  with `withComments`, `board_activity` when resuming someone else's work,
+  `verified` on every write, and `get_board`/`list_lists`/`list_cards` named as
+  deprecated aliases.
+- `scripts/sync-identity.mjs` also generates the version pin in `.mcp.json`,
+  `.codex-plugin/mcp.json` and both plugin manifests, and exports
+  `PACKAGE_NAME`. A pin that drifts would install the old server from a new
+  plugin, silently; `npm run check:identity` now fails the build instead.
+- `package.json` ships `.claude-plugin`, `.codex-plugin`, `.agents`,
+  `.mcp.json` and `hooks` in the tarball.
+- 36 unit tests for the new surface (resources list/read and mime types,
+  prompts, the `init` emitters and merges, and the plugin manifests, which
+  nothing else type-checks).
 
 - **`planka_get_card` no longer returns comments by default.** They were the
   biggest and least predictable part of the answer and most reads do not need

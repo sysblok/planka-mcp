@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "planka",
+  "displayName": "Planka",
+  "version": "0.2.0",
+  "description": "Planka 2.x kanban over MCP: digest-first reads, verified writes, and the optional board workflow as skills.",
+  "author": {
+    "name": "planka-mcp contributors",
+    "url": "https://github.com/omnicoreos/planka-mcp"
+  },
+  "homepage": "https://github.com/omnicoreos/planka-mcp#readme",
+  "repository": "https://github.com/omnicoreos/planka-mcp",
+  "license": "MIT",
+  "keywords": [
+    "planka",
+    "kanban",
+    "mcp",
+    "board",
+    "workflow"
+  ],
+  "skills": "./workflow/skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "userConfig": {
+    "planka_base_url": {
+      "type": "string",
+      "title": "Planka base URL",
+      "description": "Origin of your Planka instance, e.g. https://planka.example.com. Use the final https:// URL: an http:// redirect drops POST bodies.",
+      "required": true
+    },
+    "planka_api_key": {
+      "type": "string",
+      "title": "Planka API key",
+      "description": "API key of the agent user (X-Api-Key). An admin creates it with POST /api/users/<id>/api-key and it is shown only once. Leave empty to fall back to PLANKA_AGENT_EMAIL + PLANKA_AGENT_PASSWORD in your environment.",
+      "sensitive": true,
+      "required": false
+    },
+    "planka_default_board_id": {
+      "type": "string",
+      "title": "Default board ID",
+      "description": "Optional. Board used when a tool call omits boardId, so the agent stops spending a call to recover an ID that never changes.",
+      "required": false
+    }
+  }
+}

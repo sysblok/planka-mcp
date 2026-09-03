@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+#
+# Thin alias for `planka-mcp init --client claude`, kept because the README has
+# been pointing at it since 0.1. Everything it used to do by hand now lives in
+# the published binary, so a clone and an npx install take the same path.
+#
+# The interactive board picker and the full write smoke still live in
+# scripts/setup.mjs: run `node scripts/setup.mjs` for those.
 
 set -euo pipefail
 
@@ -15,34 +22,9 @@ if [[ "$NODE_MAJOR" -lt 18 ]]; then
   exit 1
 fi
 
-echo "Planka MCP setup"
-echo
-
-DEFAULT_URL="${PLANKA_BASE_URL:-https://planka.example.com}"
-read -r -p "Planka base URL [$DEFAULT_URL]: " INPUT_URL
-export PLANKA_BASE_URL="${INPUT_URL:-$DEFAULT_URL}"
-
-DEFAULT_EMAIL="${PLANKA_AGENT_EMAIL:-}"
-if [[ -n "$DEFAULT_EMAIL" ]]; then
-  read -r -p "Agent email or username [$DEFAULT_EMAIL]: " INPUT_EMAIL
-  export PLANKA_AGENT_EMAIL="${INPUT_EMAIL:-$DEFAULT_EMAIL}"
-else
-  read -r -p "Agent email or username: " PLANKA_AGENT_EMAIL
-  export PLANKA_AGENT_EMAIL
-fi
-
-if [[ -z "${PLANKA_AGENT_PASSWORD:-}" ]]; then
-  read -r -s -p "Agent password: " PLANKA_AGENT_PASSWORD
-  echo
-  export PLANKA_AGENT_PASSWORD
-else
-  echo "Using PLANKA_AGENT_PASSWORD from the environment."
-fi
-
 if [[ ! -f "$ROOT_DIR/dist/index.js" ]]; then
-  echo
   echo "Building the MCP server..."
   (cd "$ROOT_DIR" && npm ci && npm run build)
 fi
 
-exec node "$ROOT_DIR/scripts/setup.mjs"
+exec node "$ROOT_DIR/dist/index.js" init --client claude "$@"

@@ -12,8 +12,13 @@
     "access": "public"
   },
   "files": [
+    ".agents",
+    ".claude-plugin",
+    ".codex-plugin",
+    ".mcp.json",
     "dist",
     "docs",
+    "hooks",
     "scripts",
     "tests/smoke",
     "workflow",
