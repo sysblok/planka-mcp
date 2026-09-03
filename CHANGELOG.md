@@ -28,6 +28,54 @@ All notable changes to this project are documented here.
   two-page endpoint, checklists that stay apart, members, the description
   preview, the comment cursor and its ceiling, and one per error branch.
   Suite: 109 → 132 tests.
+- **Eight new tools, 24 → 32.** All of them answer with a digest and every write
+  re-reads before reporting:
+  - `planka_card_history` and `planka_board_activity` read Planka's activity log
+    (`/api/cards/:id/actions`, `/api/boards/:id/actions`) and turn each event
+    into one human line — "moved from X to Y", "added member Z", "completed task
+    T". `board_activity` walks pages backwards to a `since` date (5-page cap,
+    reported as `truncated`) and groups the result by card. Both say, when they
+    return nothing, that Planka logs only creation, moves, member changes and
+    task completion — never comments, renames or description edits.
+  - `planka_set_card_members` assigns and unassigns people, accepting user IDs
+    or names, and reports `finalMemberIds` read back from the card. The mirror
+    of `planka_set_card_labels`, argument for argument.
+  - `planka_list_users` lists who can be assigned, falling back to the board's
+    own members when `GET /api/users` is refused (it is admin-only) and saying
+    so in `source`. Emails only with `detail: "full"`.
+  - `planka_whoami` names the account, its board role, the Planka version and
+    the local access policy — the first call to make when a `404` makes no
+    sense. Warns when the instance is not a Planka 2.x.
+  - `planka_duplicate_card` copies a card with its tasks, labels and members
+    (attachments are not copied) and reports the counts from re-reading the copy.
+  - `planka_archive_card` archives into the board's hidden `archive` list and
+    restores with `restoreToListId`. Verified by the card's column: `isClosed`
+    does NOT change on archive, so it proves nothing.
+  - `planka_move_list_cards` empties one column into another through Planka's
+    own bulk endpoint, counting both columns before and after.
+- `src/operations/card-brief.ts`: a permissive card read used for verification.
+  An archived card comes back with `position: null`, which the strict card
+  schema rejects — the archive tool could not have verified its own write
+  without it. It also exposes `cardMemberships`, which no other read did.
+- `countListCards()` and `moveListCards()` in `src/operations/lists.ts`, plus
+  `src/operations/{actions,members,users,archive,duplicate}.ts`.
+- The four new write tools are in `WRITE_TOOL_NAMES`, so `PLANKA_READ_ONLY`
+  hides them, and `planka_archive_card` and `planka_move_list_cards` carry
+  `anthropic/requiresUserInteraction`: both change what a whole column looks
+  like.
+- 32 unit tests for the new surface (fetch mocked): one summary per event type,
+  the `since` sweep and its cursor, the 403 fallback of the user roster, the
+  archive-list resolution, and the two failures that must not read as success —
+  a membership that never landed and a bulk move whose counts do not add up.
+  Suite: 109 → 141 tests.
+- Smoke: the new tools are exercised end to end and cross-checked against the
+  raw API — history after a real move and a real assignment, a duplicate, an
+  archive/restore round trip, and a bulk move between the smoke's temporary
+  column and its working column. Every card it creates is deleted in the
+  `finally`.
+- Server instructions gained one line: `planka_board_activity` is the call to
+  make when resuming a board someone else left.
+
 - `src/operations/verify.ts`: `verifiedWrite`, `verifiedDelete` and `goneOn404`,
   the single implementation of "write, re-read, report what landed". Until now
   the pattern lived hand-copied in two places and was missing from eleven writes.
@@ -108,6 +156,10 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- Restoring a card out of the archive sent only `listId`, and Planka answered
+  *"Position must be present"* — an archived card has `position: null`. The
+  restore path now always sends a position. Caught against a real Planka 2.2.1,
+  not in a mock.
 - `planka_get_card` no longer swallows a failing comments endpoint into
   `comments: []`. A 403, a timeout or an HTML answer now surfaces as an error:
   "this card has no comments" and "I could not read them" are different facts,

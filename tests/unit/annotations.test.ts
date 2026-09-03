@@ -137,6 +137,14 @@ describe("tools/list payload", () => {
       "planka_get_attachments",
       "planka_view_attachment",
       "planka_delete_attachment",
+      "planka_card_history",
+      "planka_board_activity",
+      "planka_set_card_members",
+      "planka_list_users",
+      "planka_whoami",
+      "planka_duplicate_card",
+      "planka_archive_card",
+      "planka_move_list_cards",
     ]);
   });
 

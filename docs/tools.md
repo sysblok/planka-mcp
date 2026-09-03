@@ -1,6 +1,6 @@
 # Tools reference
 
-The server exposes exactly 24 tools. Tool results are MCP text content containing
+The server exposes exactly 32 tools. Tool results are MCP text content containing
 JSON (minified — the indentation was pure token cost). On an expected Planka
 error, the result has `isError: true` and a human-readable message instead of a
 false success.
@@ -758,6 +758,304 @@ carries its card), and that is what makes the deletion verifiable. Pass it when
 you have it; if neither is available the result says
 `verificationUnavailable` rather than claiming success.
 
+## Activity
+
+Planka records **six** kinds of event, and only six
+(`Action.Types` in `server/api/models/Action.js`):
+
+`createCard` · `moveCard` · `addMemberToCard` · `removeMemberFromCard` ·
+`completeTask` · `uncompleteTask`
+
+There is no event for a comment, a rename or a description edit. A card with an
+empty history was not necessarily untouched — it was only never moved, assigned
+or checked off. Both tools say so in a `note` when they return nothing.
+
+Both endpoints return at most **50 events** (a Planka constant, not a query
+parameter) and page backwards with a cursor.
+
+### `planka_card_history`
+
+One card's log, newest first, as one human line per event.
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "limit": 20,
+  "beforeId": "7234567890123456789"
+}
+```
+
+`limit` defaults to 20 and is capped at 50. Response:
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "cardName": "Retire the nginx failover",
+  "returned": 2,
+  "events": [
+    {
+      "id": "1855662785539605720",
+      "type": "moveCard",
+      "at": "2026-09-03T02:50:42.309Z",
+      "user": "Claude",
+      "summary": "moved the card from \"In progress\" to \"Review\""
+    },
+    {
+      "id": "1855530665752134803",
+      "type": "createCard",
+      "at": "2026-09-02T22:28:12.404Z",
+      "user": "Claude",
+      "summary": "created the card in \"Backlog\""
+    }
+  ],
+  "hasMore": false
+}
+```
+
+`hasMore` with `nextBeforeId` means there is older activity: call again passing
+`beforeId: nextBeforeId`. List, user and task names come from the event itself —
+no extra read is made to resolve them.
+
+### `planka_board_activity`
+
+What moved on a whole board, grouped by card. The call to make when resuming a
+session someone else (or a past you) left behind.
+
+```json
+{
+  "boardId": "2234567890123456789",
+  "since": "2026-09-01T00:00:00.000Z",
+  "limit": 50,
+  "types": ["moveCard", "createCard"]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `since` | ISO 8601. The sweep walks pages backwards and stops at it. |
+| `limit` | Maximum events returned. Default 50, capped at 250. |
+| `types` | Keep only these event types. |
+
+The sweep is capped at **5 pages** (250 events). Response:
+
+```json
+{
+  "boardId": "2234567890123456789",
+  "since": "2026-09-01T00:00:00.000Z",
+  "pagesFetched": 1,
+  "scanned": 50,
+  "returned": 5,
+  "cardsTouched": 1,
+  "truncated": true,
+  "nextBeforeId": "1855558191031518415",
+  "cards": [
+    {
+      "cardId": "5234567890123456789",
+      "cardName": "Retire the nginx failover",
+      "events": [
+        {
+          "id": "1855662785539605720",
+          "type": "moveCard",
+          "at": "2026-09-03T02:50:42.309Z",
+          "user": "Claude",
+          "summary": "moved the card from \"In progress\" to \"Review\""
+        }
+      ]
+    }
+  ]
+}
+```
+
+`truncated: true` means older activity exists that this answer does not carry —
+either `limit` or the page cap stopped the sweep. It is `false` only when the
+log was exhausted or `since` was reached.
+
+## People
+
+### `planka_list_users`
+
+Who can be assigned, with the IDs `planka_set_card_members` needs.
+
+```json
+{
+  "boardId": "2234567890123456789",
+  "detail": "digest"
+}
+```
+
+`GET /api/users` is admin-only in Planka. When this account is a plain
+`boardUser` the call is refused and the tool falls back to the **board's own
+members**, which is the assignable set anyway. The fallback is never silent:
+
+| Field | Meaning |
+|---|---|
+| `source: "instance"` | The instance roster. |
+| `source: "board"` + `note` | The instance roster was refused; these are the board's members, each with `boardRole` and `canComment`. |
+
+`boardId` is only used by the fallback. `detail: "full"` adds email addresses,
+which the digest deliberately omits.
+
+```json
+{
+  "source": "instance",
+  "total": 4,
+  "users": [
+    { "id": "1830226958957413619", "name": "Fede", "username": "fede", "role": "boardUser" }
+  ]
+}
+```
+
+### `planka_whoami`
+
+The first call to make when something answers `404` that should not: it names
+the account, what it may do on the board, and what the local policy switched
+off — the three usual causes of a confusing refusal.
+
+```json
+{
+  "user": { "id": "1829420929365574677", "name": "Claude", "username": "claude", "role": "admin" },
+  "plankaVersion": "2.2.1",
+  "authMode": "password",
+  "boardMembership": { "boardId": "2234567890123456789", "role": "editor", "canComment": null },
+  "policy": {
+    "defaultBoardId": null,
+    "allowedBoardIds": null,
+    "allowedProjectIds": null,
+    "readOnly": false,
+    "disabledTools": [],
+    "protectedListIds": []
+  }
+}
+```
+
+`plankaVersion` comes from `/api/bootstrap`, the only endpoint in 2.x that
+carries it. A version that does not start with `2.` adds a `versionWarning`:
+this server targets 2.x and the paths it uses may not exist elsewhere.
+`boardMembership` is read from `/api/projects` (~3 kB), not from the board show
+(~900 kB) — both carry the memberships.
+
+### `planka_set_card_members`
+
+Assigns and unassigns people on a card, then re-reads the card and reports the
+verified final state. The mirror of `planka_set_card_labels`, argument for
+argument.
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "add": ["1830226958957413619"],
+  "remove": ["1830228857995658485"],
+  "addUserNames": ["fede"],
+  "removeUserNames": ["Pat"],
+  "boardId": "2234567890123456789"
+}
+```
+
+Names are matched exactly and case-insensitively, on `username` first and then
+on `name`. An ambiguous name is **not** guessed — assigning the wrong person is
+worse than failing — and comes back in `failed`. Removals are applied before
+additions, so one call can hand a card from one person to another.
+
+The response distinguishes `added`, `removed`, `alreadyPresent`, `notPresent`,
+`failed` and `finalMemberIds`. A `404` on an addition almost always means the
+user is not a member of that board; the reason says so.
+
+## Card operations
+
+### `planka_duplicate_card`
+
+Copies a card through Planka's own `duplicate` endpoint, which carries over the
+card's tasks, labels, members and custom field values. **Attachments are not
+copied.**
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "listId": "3234567890123456789",
+  "name": "Retire the nginx failover (round 2)",
+  "position": 65536
+}
+```
+
+Without `listId` the copy lands in the original's column; without `name` Planka
+appends its own suffix. `boardId` copies across boards and then `listId` is
+required — a card cannot land on a board without a column. The counts in
+`copied` come from re-reading the new card, not from the write's response.
+
+```json
+{
+  "success": true,
+  "verified": true,
+  "card": { "id": "6234567890123456789", "name": "…", "listId": "3234567890123456789" },
+  "sourceCardId": "5234567890123456789",
+  "copied": { "tasks": 2, "labels": 1, "members": 1, "attachments": 0 }
+}
+```
+
+### `planka_archive_card`
+
+Planka has no "archive" verb. Every board owns two invisible lists besides its
+columns — one of type `archive` and one of type `trash` — with no name, no
+position, and no `GET` of their own (`GET /api/lists/:id` answers 404 for
+them). Archiving is a move into the first of those, and this tool resolves it
+from the board.
+
+```json
+{ "cardId": "5234567890123456789" }
+```
+
+To bring a card back, name the column it should land in:
+
+```json
+{ "cardId": "5234567890123456789", "restoreToListId": "3234567890123456789" }
+```
+
+Two behaviours worth knowing, both verified against Planka 2.2.1:
+
+- `isClosed` does **not** change when a card is archived, so it is useless as
+  proof. The only honest verification is the card's `listId`.
+- An archived card has `position: null`, and Planka rejects a `PATCH` that only
+  carries `listId` with *"Position must be present"*. The restore path always
+  sends a position (`position` is accepted; it defaults to the end).
+
+The archive response reports `previousListId`, which is the argument to pass to
+`restoreToListId` later. Archiving an already-archived card does not move it
+again: it answers `alreadyArchived: true` and names the column it came from.
+
+### `planka_move_list_cards`
+
+Moves **every** card of one column into another, through Planka's own bulk
+endpoint — one call instead of N patches and N chances to stop halfway.
+
+```json
+{
+  "fromListId": "3234567890123456789",
+  "toListId": "4234567890123456789",
+  "boardId": "2234567890123456789"
+}
+```
+
+Both columns are counted before and after, and the tool only claims success
+when the numbers add up:
+
+```json
+{
+  "success": true,
+  "verified": true,
+  "fromListId": "3234567890123456789",
+  "toListId": "4234567890123456789",
+  "moved": 3,
+  "fromRemaining": 0,
+  "toTotal": 8,
+  "expectedTotal": 8
+}
+```
+
+`verified: false` with `isError` means the counts disagree — read both columns
+before retrying. An already empty source column is not an error: it answers
+`moved: 0`. `PLANKA_PROTECTED_LIST_IDS` guards both ends, so a protected column
+can be neither filled nor drained.
+
 ## When arguments are wrong
 
 Invalid input is reported as an error result naming the tool, the field, what
@@ -801,9 +1099,9 @@ Unit tests validate schemas, request construction, and error formatting without 
 network: run them with `npm test`.
 
 The opt-in smoke test is the other half. It starts the built MCP server over stdio,
-drives all 24 tools through real MCP calls, and independently queries the raw
+drives all 32 tools through real MCP calls, and independently queries the raw
 Planka HTTP API after every mutation, so a tool that reports success on something
-that never landed is caught here. It runs 64 named checks.
+that never landed is caught here. It runs over 90 named checks.
 
 ```bash
 export PLANKA_BASE_URL="https://planka.example.com"

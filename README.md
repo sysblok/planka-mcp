@@ -1,6 +1,6 @@
 # planka-mcp
 
-Control a Planka 2.x board from Claude Code through 24 MCP tools.
+Control a Planka 2.x board from Claude Code through 32 MCP tools.
 Writes are re-read and verified, so a reported success matches the board.
 An optional workflow turns that board into durable memory for agent work.
 
@@ -222,7 +222,7 @@ Example — an agent that reads one board and comments, and nothing else:
 }
 ```
 
-## The 24 tools
+## The 32 tools
 
 IDs are strings. Start with `planka_get_structure`, then use IDs returned by
 Planka; do not guess them.
@@ -253,6 +253,14 @@ Planka; do not guess them.
 | `planka_get_attachments` | Lists a card's attachments with type, size, and download URL |
 | `planka_view_attachment` | Returns an attachment's content; images come back viewable |
 | `planka_delete_attachment` | Deletes an attachment |
+| `planka_card_history` | One card's activity log as human lines: created, moved, assigned, tasks completed |
+| `planka_board_activity` | What moved on a board since a date, grouped by card |
+| `planka_set_card_members` | Assigns or unassigns people and verifies the final membership |
+| `planka_list_users` | The people who can be assigned, with a board-scoped fallback |
+| `planka_whoami` | This server's account, board role, Planka version and access policy |
+| `planka_duplicate_card` | Copies a card with its tasks, labels and members |
+| `planka_archive_card` | Archives a card into the board's hidden archive, or restores it |
+| `planka_move_list_cards` | Moves every card of one column into another, with counts |
 
 `planka_get_board` returns the entire board, which is often more than the
 question needs. The four scoped reads answer narrower questions and return far
@@ -271,7 +279,7 @@ The `initialize` handshake returns a short set of server instructions — how to
 open a session, where IDs come from, why every comment on a card matters, and
 that Planka answers `404` where it means `403`. Claude Code puts them in the
 session system prompt and Codex CLI reads them alongside the tool list, so the
-shared guidance is stated once instead of repeated in 24 tool descriptions.
+shared guidance is stated once instead of repeated in 32 tool descriptions.
 Every tool also publishes a display title and all four MCP behavioural hints
 explicitly, rather than inheriting the spec's pessimistic defaults, plus the two
 `_meta` keys Claude Code acts on: a forced confirmation prompt on the tools that
@@ -322,8 +330,8 @@ npm test
 ```
 
 The real smoke test is opt-in because it mutates a writable board and then cleans
-up after itself. It drives all 24 tools over stdio and cross-checks every write
-against the raw Planka API — 64 named checks:
+up after itself. It drives all 32 tools over stdio and cross-checks every write
+against the raw Planka API — over 90 named checks:
 
 ```bash
 export PLANKA_BASE_URL="https://planka.example.com"

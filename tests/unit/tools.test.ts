@@ -7,10 +7,10 @@ import {
 import { parsePolicy } from "../../src/config/policy.js";
 
 describe("MCP tool registry", () => {
-  it("publishes exactly 24 uniquely named tools", () => {
+  it("publishes exactly 32 uniquely named tools", () => {
     const names = allTools.map((tool) => tool.name);
-    expect(names).toHaveLength(24);
-    expect(new Set(names).size).toBe(24);
+    expect(names).toHaveLength(32);
+    expect(new Set(names).size).toBe(32);
   });
 
   it("publishes JSON schemas with required object roots", () => {
@@ -25,14 +25,14 @@ describe("access policy applied to the registry", () => {
   const open = parsePolicy({});
 
   it("lists every tool when nothing is restricted", () => {
-    expect(getToolDefinitions(open)).toHaveLength(24);
+    expect(getToolDefinitions(open)).toHaveLength(32);
   });
 
   it("hides write tools in read-only mode", () => {
     const policy = parsePolicy({ PLANKA_READ_ONLY: "true" });
     const names = getToolDefinitions(policy).map((t) => t.name);
 
-    expect(names).toHaveLength(10);
+    expect(names).toHaveLength(14);
     expect(names).toContain("planka_board_summary");
     expect(names).not.toContain("planka_create_card");
     expect(names).not.toContain("planka_delete_card");
@@ -44,7 +44,7 @@ describe("access policy applied to the registry", () => {
     });
     const names = getToolDefinitions(policy).map((t) => t.name);
 
-    expect(names).toHaveLength(22);
+    expect(names).toHaveLength(30);
     expect(names).not.toContain("planka_get_board");
     expect(names).not.toContain("planka_delete_card");
   });

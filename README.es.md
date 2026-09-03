@@ -1,6 +1,6 @@
 # planka-mcp
 
-Manejá un tablero Planka 2.x desde Claude Code mediante 24 tools MCP.
+Manejá un tablero Planka 2.x desde Claude Code mediante 32 tools MCP.
 Las escrituras se releen y verifican: un éxito informado coincide con el board.
 Un flujo opcional convierte ese board en memoria durable para el trabajo con agentes.
 
@@ -223,7 +223,7 @@ Ejemplo — un agente que lee un board y comenta, y nada más:
 }
 ```
 
-## Las 24 tools
+## Las 32 tools
 
 Los IDs son strings. Empezá con `planka_get_structure` y usá los IDs que devuelve
 Planka; no los adivines.
@@ -254,6 +254,14 @@ Planka; no los adivines.
 | `planka_get_attachments` | Lista los adjuntos de una card con tipo, tamaño y URL de descarga |
 | `planka_view_attachment` | Devuelve el contenido de un adjunto; las imágenes vuelven visibles |
 | `planka_delete_attachment` | Borra un adjunto |
+| `planka_card_history` | El historial de una card en líneas legibles: creada, movida, asignada, tareas completadas |
+| `planka_board_activity` | Qué se movió en un board desde una fecha, agrupado por card |
+| `planka_set_card_members` | Asigna o desasigna personas y verifica la membresía final |
+| `planka_list_users` | Quiénes pueden ser asignados, con fallback al board |
+| `planka_whoami` | La cuenta del servidor, su rol en el board, la versión de Planka y la policy |
+| `planka_duplicate_card` | Copia una card con sus tareas, labels y miembros |
+| `planka_archive_card` | Archiva una card en el archivo oculto del board, o la restaura |
+| `planka_move_list_cards` | Mueve todas las cards de una columna a otra, con conteos |
 
 `planka_get_board` devuelve el board entero, que suele ser más de lo que la
 pregunta necesita. Las cuatro lecturas acotadas responden preguntas más chicas y
@@ -273,7 +281,7 @@ cómo abrir una sesión, de dónde salen los IDs, por qué importan todos los
 comentarios de una card, y que Planka contesta `404` donde quiere decir `403`.
 Claude Code las mete en el system prompt de la sesión y Codex CLI las lee junto
 con la lista de tools, así que la guía compartida se dice una vez en vez de
-repetirse en 24 descripciones. Cada tool además publica un título de display y
+repetirse en 32 descripciones. Cada tool además publica un título de display y
 los cuatro hints de comportamiento del MCP escritos explícitamente, en lugar de
 heredar los defaults pesimistas de la spec, más las dos claves `_meta` que
 Claude Code sí usa: confirmación forzada en las tools que borran datos y un tope
@@ -324,8 +332,8 @@ npm test
 ```
 
 El smoke real es opt-in porque modifica un board escribible y después limpia lo
-creado. Ejercita las 24 tools por stdio y contrasta cada escritura contra la API
-cruda de Planka: 64 checks con nombre.
+creado. Ejercita las 32 tools por stdio y contrasta cada escritura contra la API
+cruda de Planka: más de 90 checks con nombre.
 
 ```bash
 export PLANKA_BASE_URL="https://planka.example.com"

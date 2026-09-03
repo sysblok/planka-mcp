@@ -49,6 +49,10 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "planka_manage_lists",
   "planka_add_attachment",
   "planka_delete_attachment",
+  "planka_set_card_members",
+  "planka_duplicate_card",
+  "planka_archive_card",
+  "planka_move_list_cards",
 ]);
 
 /** Tool names are always prefixed; accept the bare name as a convenience. */

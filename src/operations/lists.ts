@@ -65,3 +65,40 @@ export async function deleteList(input: ListIdInput): Promise<List | null> {
   const parsed = ListResponse.safeParse(body);
   return parsed.success ? parsed.data.item : null;
 }
+
+/**
+ * How many cards a column holds, right now.
+ *
+ * `GET /api/lists/:id` returns the WHOLE column in `included.cards` — no 50-item
+ * page, unlike `GET /api/lists/:id/cards` — which is what makes it usable as a
+ * counter. It is also the expensive way to count (a 159-card column is ~800 kB
+ * on the wire), so it is only ever used to verify a bulk move, twice.
+ *
+ * Deliberately not parsed through a schema: this counts, it does not read.
+ */
+export async function countListCards(listId: string): Promise<number> {
+  const response = await plankaClient.get<{ included?: { cards?: unknown[] } }>(
+    `/api/lists/${listId}`
+  );
+  return response?.included?.cards?.length ?? 0;
+}
+
+/**
+ * Empties one column into another in a single Planka call.
+ *
+ * `POST /api/lists/:id/move-cards {listId}` is Planka's own bulk move; doing it
+ * card by card would be N PATCHes and N chances to stop halfway. It answers
+ * `{item, included:{cards, actions}}`, but the answer is not the proof — the
+ * caller counts both columns before and after.
+ */
+export async function moveListCards(input: {
+  fromListId: string;
+  toListId: string;
+}): Promise<void> {
+  assertListWritable(input.toListId, undefined, "move cards into");
+  assertListWritable(input.fromListId, undefined, "move cards out of");
+
+  await plankaClient.post<unknown>(`/api/lists/${input.fromListId}/move-cards`, {
+    listId: input.toListId,
+  });
+}

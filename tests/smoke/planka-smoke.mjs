@@ -37,7 +37,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { PlankaApi, boardEntities } from "../../scripts/lib/planka-api.mjs";
 
-const EXPECTED_TOOL_COUNT = 24;
+const EXPECTED_TOOL_COUNT = 32;
 
 /** Prefix on every artifact this test creates; the initial sweep looks for it. */
 const PREFIX = "[smoke planka-mcp]";
@@ -890,6 +890,48 @@ async function run() {
     renamedList
   );
 
+  // A bulk move needs a column of its own, which is exactly what tempList is.
+  const strayCard = await json("planka_create_card", {
+    listId: tempList.list.id,
+    name: `${PREFIX} bulk move passenger`,
+  });
+  if (strayCard?.card?.id) artifacts.cards.push(strayCard.card.id);
+  check(
+    "a card was created in the temporary column for the bulk move",
+    Boolean(strayCard?.card?.id) && strayCard.verified === true,
+    strayCard
+  );
+
+  const bulkMoved = await json("planka_move_list_cards", {
+    fromListId: tempList.list.id,
+    toListId: list.id,
+    boardId,
+  });
+  check(
+    "planka_move_list_cards empties the column and the counts add up",
+    bulkMoved?.verified === true &&
+      bulkMoved?.moved === 1 &&
+      bulkMoved?.fromRemaining === 0,
+    bulkMoved
+  );
+
+  const rawAfterBulk = await api.get(`/api/lists/${tempList.list.id}`);
+  check(
+    "the raw API confirms the temporary column is empty",
+    (rawAfterBulk?.included?.cards ?? []).length === 0,
+    rawAfterBulk?.included?.cards?.length
+  );
+
+  const bulkNoop = await json("planka_move_list_cards", {
+    fromListId: tempList.list.id,
+    toListId: list.id,
+  });
+  check(
+    "planka_move_list_cards on an empty column moves nothing and says so",
+    bulkNoop?.verified === true && bulkNoop?.moved === 0,
+    bulkNoop
+  );
+
   const deletedList = await json("planka_manage_lists", {
     action: "delete",
     listId: tempList.list.id,
@@ -899,6 +941,161 @@ async function run() {
     "planka_manage_lists delete, verified: true",
     deletedList?.verified === true,
     deletedList
+  );
+
+  // --- identity -------------------------------------------------------------
+  const who = await json("planka_whoami", { boardId });
+  check(
+    "planka_whoami names the account and the Planka version",
+    Boolean(who?.user?.id) && typeof who?.plankaVersion === "string",
+    who
+  );
+  check(
+    "planka_whoami reports this session's access policy",
+    who?.policy !== undefined && who?.authMode !== undefined,
+    who?.policy
+  );
+
+  const roster = await json("planka_list_users", { boardId });
+  const agentUser = roster?.users?.find((user) => user.id === who?.user?.id);
+  check(
+    "planka_list_users lists the agent account itself",
+    Boolean(agentUser) && ["instance", "board"].includes(roster?.source),
+    roster
+  );
+  check(
+    "planka_list_users hides emails unless asked",
+    (roster?.users ?? []).every((user) => user.email === undefined),
+    roster?.users?.[0]
+  );
+
+  // --- card members ---------------------------------------------------------
+  const assigned = await json("planka_set_card_members", {
+    cardId,
+    add: [who.user.id],
+  });
+  check(
+    "planka_set_card_members assigns and re-reads the membership",
+    assigned?.verified === true &&
+      assigned?.finalMemberIds?.includes(who.user.id),
+    assigned
+  );
+
+  const rawAssigned = await api.getCard(cardId);
+  check(
+    "the raw API confirms the card membership",
+    (rawAssigned?.included?.cardMemberships ?? []).some(
+      (membership) => membership.userId === who.user.id
+    ),
+    rawAssigned?.included?.cardMemberships
+  );
+
+  const unassigned = await json("planka_set_card_members", {
+    cardId,
+    remove: [who.user.id],
+  });
+  check(
+    "planka_set_card_members unassigns and reports an empty membership",
+    unassigned?.verified === true &&
+      !unassigned?.finalMemberIds?.includes(who.user.id),
+    unassigned
+  );
+
+  const rawUnassigned = await api.getCard(cardId);
+  check(
+    "the raw API confirms the membership is gone",
+    !(rawUnassigned?.included?.cardMemberships ?? []).some(
+      (membership) => membership.userId === who.user.id
+    ),
+    rawUnassigned?.included?.cardMemberships
+  );
+
+  // --- history: the card has been created, moved and assigned by now ---------
+  const history = await json("planka_card_history", { cardId, limit: 10 });
+  check(
+    "planka_card_history returns the events this run generated",
+    (history?.events ?? []).some((event) => event.type === "createCard") &&
+      (history?.events ?? []).some((event) => event.type === "moveCard") &&
+      (history?.events ?? []).some((event) => event.type === "addMemberToCard"),
+    history
+  );
+  check(
+    "planka_card_history summarises each event in one human line",
+    (history?.events ?? []).every(
+      (event) => typeof event.summary === "string" && event.summary.length > 0 && event.at
+    ),
+    history?.events?.[0]
+  );
+
+  const activity = await json("planka_board_activity", { boardId, limit: 20 });
+  const inActivity = (activity?.cards ?? []).find((entry) => entry.cardId === cardId);
+  check(
+    "planka_board_activity groups the scratch card's events under it",
+    Boolean(inActivity) && (inActivity?.events ?? []).length > 0,
+    inActivity
+  );
+
+  // --- duplicate ------------------------------------------------------------
+  const duplicate = await json("planka_duplicate_card", {
+    cardId,
+    name: `${PREFIX} duplicate`,
+  });
+  const duplicateId = duplicate?.card?.id ?? null;
+  if (duplicateId) artifacts.cards.push(duplicateId);
+  check(
+    "planka_duplicate_card creates a verified copy",
+    duplicate?.verified === true &&
+      Boolean(duplicateId) &&
+      duplicate?.card?.name === `${PREFIX} duplicate`,
+    duplicate
+  );
+
+  const rawDuplicate = duplicateId ? await api.getCard(duplicateId) : null;
+  check(
+    "the raw API confirms the copy exists in the same column",
+    rawDuplicate?.item?.listId === duplicate?.card?.listId,
+    rawDuplicate?.item
+  );
+
+  // --- archive and back -----------------------------------------------------
+  const beforeArchive = (await api.getCard(cardId))?.item?.listId;
+  const archived = await json("planka_archive_card", { cardId });
+  check(
+    "planka_archive_card moves the card into the board's archive column",
+    archived?.verified === true && archived?.archived === true,
+    archived
+  );
+
+  const rawArchived = await api.getCard(cardId);
+  check(
+    "the raw API confirms the card left its column",
+    rawArchived?.item?.listId === archived?.archiveListId &&
+      rawArchived?.item?.listId !== beforeArchive,
+    rawArchived?.item
+  );
+
+  const archivedAgain = await json("planka_archive_card", { cardId });
+  check(
+    "archiving an archived card says so instead of moving it again",
+    archivedAgain?.alreadyArchived === true,
+    archivedAgain
+  );
+
+  const restored = await json("planka_archive_card", {
+    cardId,
+    restoreToListId: beforeArchive,
+  });
+  check(
+    "planka_archive_card restores the card to the column it came from",
+    restored?.verified === true && restored?.card?.listId === beforeArchive,
+    restored
+  );
+
+  const rawRestored = await api.getCard(cardId);
+  check(
+    "the raw API confirms the card is back in its column",
+    rawRestored?.item?.listId === beforeArchive,
+    rawRestored?.item
   );
 
   // --- actionable error paths ----------------------------------------------
@@ -987,6 +1184,18 @@ async function run() {
   );
 
   // --- teardown, verified ---------------------------------------------------
+  // The copy and the bulk-move passenger are cards like any other: they have to
+  // be gone before the "no artifacts left" check below can mean anything.
+  for (const extraId of [duplicateId, strayCard?.card?.id].filter(Boolean)) {
+    const deletedExtra = await json("planka_delete_card", { cardId: extraId });
+    if (deletedExtra?.verified === true) forget("cards", extraId);
+    check(
+      `planka_delete_card removes the extra card ${extraId}, verified: true`,
+      deletedExtra?.verified === true,
+      deletedExtra
+    );
+  }
+
   const deletedCard = await json("planka_delete_card", { cardId });
   if (deletedCard?.verified === true) forget("cards", cardId);
   check(
