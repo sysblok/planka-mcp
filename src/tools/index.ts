@@ -9,6 +9,7 @@ import { commentTools } from "./comments.js";
 import { listTools } from "./lists.js";
 import { attachmentTools } from "./attachments.js";
 import { queryTools } from "./queries.js";
+import { toolPresentation } from "./annotations.js";
 
 /**
  * All registered tools.
@@ -76,11 +77,19 @@ export function findMissingRequiredArgs(tool: Tool, args: unknown): string[] {
  * Get all tool definitions (for MCP listTools).
  */
 export function getToolDefinitions() {
-  return allTools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
-  }));
+  return allTools.map((tool) => {
+    // Annotations live in their own map; forgetting to spread them here is how
+    // they get silently dropped from tools/list.
+    const presentation = toolPresentation[tool.name];
+    return {
+      name: tool.name,
+      ...(presentation ? { title: presentation.title } : {}),
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      ...(presentation ? { annotations: presentation.annotations } : {}),
+      ...(presentation?._meta ? { _meta: presentation._meta } : {}),
+    };
+  });
 }
 
 // Re-export individual tool groups
@@ -92,3 +101,8 @@ export { commentTools } from "./comments.js";
 export { listTools } from "./lists.js";
 export { attachmentTools } from "./attachments.js";
 export { queryTools } from "./queries.js";
+export {
+  toolPresentation,
+  TOOLS_REQUIRING_USER_INTERACTION,
+} from "./annotations.js";
+export type { ToolBehaviourHints, ToolPresentation } from "./annotations.js";

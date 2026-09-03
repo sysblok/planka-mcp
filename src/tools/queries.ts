@@ -52,11 +52,8 @@ function withPlankaErrors<P>(
 export const listCardsTool = {
   name: "planka_list_cards",
   description:
-    "List the cards of ONE list/column, compact (id, name, labels, task counts, dueDate) and paginated. " +
-    "Prefer this over planka_get_board whenever you only care about one column: on a ~100-card board it returns roughly 1/20th of the text. " +
-    "Descriptions are OFF by default — turn them on only when you actually need them. " +
-    "Returns total/returned/hasMore/nextOffset, so you always know whether you saw everything. " +
-    "Get list IDs from planka_list_lists or planka_get_structure.",
+    "Cards of ONE list/column: id, name, labels, task counts, dueDate. " +
+    "List IDs come from planka_list_lists or planka_get_structure.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -148,8 +145,7 @@ export const listCardsTool = {
 export const listListsTool = {
   name: "planka_list_lists",
   description:
-    "List the columns of a board with how many cards each one holds — no cards, no descriptions. " +
-    "Use it to see the shape of a board and pick which column to open next: it costs a few dozen lines where planka_get_board costs thousands. " +
+    "Columns of a board with how many cards each one holds. The shape of a board, without the cards. " +
     "planka_get_structure gives the same names but NOT the counts.",
   inputSchema: {
     type: "object" as const,
@@ -174,10 +170,8 @@ export const listListsTool = {
 export const boardSummaryTool = {
   name: "planka_board_summary",
   description:
-    "One-call briefing of a board: every column with its card count, every label, and the cards sitting in the column(s) that are waiting on a decision — flagged by whether they already carry the unblocking label. " +
-    "This is the tool to open a working session with: it answers 'what is on this board and what should I pick up' without dumping the board. " +
-    "By default it picks the decision column by name (matches 'decision'/'decide'/'blocked', accent-insensitive, so '🤔 Necesita tu decisión' works) and highlights the label 'decidido'; override both for other boards. " +
-    "Card payload is minimal (id, name, list, labels) — follow up with planka_get_card for one card, never with planka_get_board.",
+    "The session opener: every column with its card count, every label, and the cards awaiting a decision, flagged by whether they already carry the unblocking label. " +
+    "The decision column is matched by name ('decision'/'decide'/'blocked', accent-insensitive) and the highlighted label defaults to 'decidido'; override both for other boards.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -236,10 +230,9 @@ export const boardSummaryTool = {
 export const findCardsTool = {
   name: "planka_find_cards",
   description:
-    "Search the cards of a board by label and/or text, returning only the matches (id, name, list, labels). " +
-    "Two jobs it does far cheaper than planka_get_board: sweeping every card carrying a label (labelName: 'decidido'), and checking 'does a card about X already exist?' before creating a duplicate. " +
-    "query matches BOTH the card name and its description, case- and accent-insensitive; listId narrows the search to one column. " +
-    "At least one of labelName / query / listId is required. Descriptions are omitted unless withDescription is set, so the answer stays a handful of lines however big the board is.",
+    "Search a board's cards by label and/or text, returning only the matches. " +
+    "Sweeps every card carrying a label, or checks whether a card about X already exists before you create a duplicate. " +
+    "At least one of labelName / query / listId is required.",
   inputSchema: {
     type: "object" as const,
     properties: {

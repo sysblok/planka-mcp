@@ -20,7 +20,7 @@ import { PlankaError } from "../errors.js";
 export const createCardTool = {
   name: "planka_create_card",
   description:
-    "Create a new card on a board. Optionally add tasks (checklist items) at the same time.",
+    "Create a card in a list, optionally with a checklist of tasks.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -134,7 +134,7 @@ export const createCardTool = {
 export const getCardTool = {
   name: "planka_get_card",
   description:
-    "Get full details of a card including tasks, comments, labels, and attachments.",
+    "Full detail of one card: tasks, comments, labels and attachments.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -212,7 +212,7 @@ export const getCardTool = {
 export const updateCardTool = {
   name: "planka_update_card",
   description:
-    "Update a card's properties (name, description, due date, completion status).",
+    "Update a card's name, description, due date or completion. Null clears a field.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -300,7 +300,7 @@ export const updateCardTool = {
 export const moveCardTool = {
   name: "planka_move_card",
   description:
-    "Move a card to a different list or position. Use this for workflow transitions (e.g., 'To Do' -> 'In Progress').",
+    "Move a card to another list or position — the workflow transition.",
   inputSchema: {
     type: "object" as const,
     properties: {

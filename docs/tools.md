@@ -17,6 +17,55 @@ human-readable message instead of a false success.
 - Destructive tools really delete data. Ask for confirmation in your agent prompt
   when that matters.
 
+## Server instructions and annotations
+
+Two things travel with `tools/list` and the `initialize` handshake, so a client
+gets them without installing anything.
+
+**Server instructions.** The `initialize` result carries an `instructions`
+string (~1.8 kB). Claude Code injects it into the session system prompt and
+Codex CLI reads it alongside the tool list. It holds the guidance that is shared
+by many tools and therefore does not belong in any single description: open a
+session with `planka_board_summary` and never `planka_get_board`, IDs are
+strings of digits taken from `planka_get_structure` or `planka_board_summary`,
+read every comment on a card before acting on it, reads return digests with
+`total`/`returned`/`hasMore`, writes report `verified` and `finalLabelIds`, and
+Planka answers `404` where it means `403`. The MCP spec asks that instructions
+not duplicate tool descriptions, which is why the descriptions below are short.
+Source: `src/instructions.ts`, budget enforced at 1500-2500 characters by
+`tests/unit/instructions.test.ts`.
+
+**Tool annotations.** Every tool publishes a `title` and all four behavioural
+hints, spelled out rather than left to the spec defaults — which are pessimistic
+(`readOnlyHint: false`, `destructiveHint: true`, `idempotentHint: false`,
+`openWorldHint: true`) and would make `planka_get_comments` look as dangerous as
+`planka_delete_card`. `openWorldHint` is `false` everywhere: the domain is one
+configured Planka instance, not the open web.
+
+| Group | `readOnlyHint` | `destructiveHint` | `idempotentHint` |
+|---|---|---|---|
+| Reads (`get_*`, `list_*`, `find_cards`, `board_summary`) | `true` | `false` | `true` |
+| Additive writes (`create_card`, `create_tasks`, `add_comment`, `add_attachment`) | `false` | `false` | `false` |
+| Converging writes (`move_card`, `update_task`) | `false` | `false` | `true` |
+| Data-losing writes (`update_card`, `set_card_labels`, every `delete_*`, `manage_comment`) | `false` | `true` | `true` |
+| Multi-action managers (`manage_labels`, `manage_lists`) | `false` | `true` | `false` |
+
+**Anthropic `_meta`.** Claude Code does not gate permissions on the standard
+hints; it reads two `_meta` keys instead, and the server ships both:
+
+- `anthropic/requiresUserInteraction: true` forces the permission prompt even
+  under an `allow` rule — set on `planka_delete_card`, `planka_delete_task`,
+  `planka_delete_attachment`, `planka_manage_comment`, `planka_manage_lists` and
+  `planka_manage_labels`. The last three are marked whole because one of their
+  actions deletes: a list takes its cards with it, a label disappears from every
+  card that carried it.
+- `anthropic/maxResultSizeChars: 4500000` on `planka_view_attachment`, so a
+  base64 image up to 3 MB is not clipped by the default per-tool ceiling.
+
+The map lives in `src/tools/annotations.ts`. A tool with no entry there fails
+`tests/unit/annotations.test.ts`, and the same file pins the order of
+`tools/list` so clients that cache it see a stable payload.
+
 ## Navigation
 
 ### `planka_get_structure`

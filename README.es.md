@@ -143,6 +143,20 @@ una respuesta recortada nunca parece completa.
 Todos los campos y un payload completo por tool están en la
 [referencia de tools](docs/tools.md).
 
+## Qué aprende el cliente al conectarse
+
+El handshake `initialize` devuelve un texto corto de instrucciones del servidor:
+cómo abrir una sesión, de dónde salen los IDs, por qué importan todos los
+comentarios de una card, y que Planka contesta `404` donde quiere decir `403`.
+Claude Code las mete en el system prompt de la sesión y Codex CLI las lee junto
+con la lista de tools, así que la guía compartida se dice una vez en vez de
+repetirse en 24 descripciones. Cada tool además publica un título de display y
+los cuatro hints de comportamiento del MCP escritos explícitamente, en lugar de
+heredar los defaults pesimistas de la spec, más las dos claves `_meta` que
+Claude Code sí usa: confirmación forzada en las tools que borran datos y un tope
+de salida más alto en `planka_view_attachment`. Detalle en
+[Server instructions and annotations](docs/tools.md#server-instructions-and-annotations).
+
 ## Flujo de agentes opcional
 
 El servidor MCP funciona por sí solo. El método opcional resuelve otro problema:
