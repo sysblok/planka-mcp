@@ -6,6 +6,28 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- **`planka_get_card` is a digest with detail on demand.** By default it returns
+  counts and names instead of the whole record: `listName` next to `listId`,
+  label **names** with their ids, `members`, tasks as `{done, total, lists:[…]}`
+  with one entry per checklist, `attachmentsCount`, Planka's own `commentsTotal`,
+  `dueDate`/`isDueCompleted`/`isClosed`/`updatedAt`, and a 200-char
+  `descriptionPreview` (with `descriptionChars`, `descriptionTruncated`).
+  New parameters: `detail: "digest" | "full"`, `withComments` (a number or
+  `"all"`), `descriptionChars`. Measured on a real card with 6 comments and 5
+  attachments: **1275 chars against 13 187** for the old always-everything
+  answer — 90 % less, with the column name and the label names it never had.
+- `planka_get_comments` paginates honestly: `limit` (default 20, max 50),
+  `beforeId` as an in/out cursor, `hasMore`, `nextBeforeId`, `order`
+  (`"asc"` — oldest first — by default) and `all: true` with a 10-page ceiling
+  that reports `truncated`. `getComments()` / `getCommentsPage()` in
+  `src/operations/comments.ts` are the operations behind it.
+- `getBoardNames()`: the one board read that resolves a card's `listId` and
+  `labelId`s to names, memoized for 60 s. Best effort by design — a board that
+  cannot be read costs the names, never the card.
+- 23 unit tests: digest vs full, `withComments` 0/N/`"all"` against a mocked
+  two-page endpoint, checklists that stay apart, members, the description
+  preview, the comment cursor and its ceiling, and one per error branch.
+  Suite: 109 → 132 tests.
 - `src/operations/verify.ts`: `verifiedWrite`, `verifiedDelete` and `goneOn404`,
   the single implementation of "write, re-read, report what landed". Until now
   the pattern lived hand-copied in two places and was missing from eleven writes.
@@ -29,6 +51,29 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- **`planka_get_card` no longer returns comments by default.** They were the
+  biggest and least predictable part of the answer and most reads do not need
+  them; `withComments` brings them back, and the digest always says how many
+  exist (`commentsTotal`). Comments come back **oldest first**, the order the
+  thread was written.
+- `commentCount` in `planka_get_comments` is documented and reported as what
+  *that response* carries, never as the card's total — Planka serves comments 50
+  at a time and ignores `?limit`/`?page`, so the old field was a page size
+  wearing a total's name.
+- Errors say what to do next: a **403** names the likely cause (the agent user is
+  not a board member, or is a viewer where an editor is needed) and warns that
+  Planka answers 404 for it too; a **404** keeps Planka's own message and names
+  the kind of ID the path expected (`labelId`, `listId`…); a **401** that
+  survives the automatic retry points at `PLANKA_API_KEY` /
+  `PLANKA_AGENT_PASSWORD` instead of at the session; **HTML instead of JSON**
+  names the SPA catch-all and, on a write, warns that it MAY have landed;
+  **network failures** carry the base URL.
+- `planka_view_attachment` on a card with no attachments says there is nothing
+  to view, instead of asking for an `attachmentId` and listing "none".
+- `CardIncludedSchema` covers what Planka 2.2 really sends (`cardMemberships`,
+  `users`, `customFields`, `customFieldValues`) and the card schema tolerates
+  `commentsTotal`, `isDueCompleted`, `isClosed` and `stopwatch`. Enums stay open
+  strings on read paths.
 - **A `200` is no longer a success.** `planka_create_card`, `planka_update_card`,
   `planka_move_card`, `planka_delete_card`, `planka_create_tasks`,
   `planka_update_task`, `planka_delete_task`, `planka_manage_labels`,

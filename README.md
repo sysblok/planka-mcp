@@ -236,7 +236,7 @@ Planka; do not guess them.
 | `planka_list_cards` | Reads one column, paginated, without descriptions by default |
 | `planka_find_cards` | Searches a board's cards by label, text, or column |
 | `planka_create_card` | Creates a card and can attach tasks and labels |
-| `planka_get_card` | Reads complete card details |
+| `planka_get_card` | Card digest; `detail: "full"` and `withComments` on demand |
 | `planka_update_card` | Updates title, description, due date, or completion |
 | `planka_move_card` | Moves a card to another list or position |
 | `planka_delete_card` | Permanently deletes a card |
@@ -246,7 +246,7 @@ Planka; do not guess them.
 | `planka_manage_labels` | Creates, updates, or deletes board labels |
 | `planka_set_card_labels` | Adds or removes labels and verifies the final state |
 | `planka_add_comment` | Adds a comment through Planka 2.x's dedicated endpoint |
-| `planka_get_comments` | Reads comments through the dedicated endpoint |
+| `planka_get_comments` | Paginated comments (`limit`, `beforeId`, `all`) |
 | `planka_manage_comment` | Edits or deletes an existing comment |
 | `planka_manage_lists` | Creates, updates, or deletes board lists |
 | `planka_add_attachment` | Uploads a local file to a card and verifies it landed |

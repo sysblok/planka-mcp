@@ -201,3 +201,70 @@ error lists the projects that *are* visible. Two causes, in order of likelihood:
 the id belongs to a board rather than a project, or the Planka user has no board
 membership inside that project. `PLANKA_ALLOWED_PROJECT_IDS` produces a different
 message that names the variable.
+
+## “`planka_get_card` no longer returns the comments”
+
+Not a bug: comments are **off by default** since the card read became a digest.
+They were the biggest and least predictable part of the answer, and most reads do
+not need them.
+
+Ask for them: `withComments: 10` for the ten most recent, `withComments: "all"`
+to page through every one. The digest still tells you how many exist —
+`commentsTotal`, Planka's own counter — and the placeholder in the `comments`
+field says exactly this.
+
+Same story for the description: the digest carries `descriptionPreview` (200
+chars, with `descriptionChars` and `descriptionTruncated`). `detail: "full"`
+returns the whole record — description, task items, attachments, custom fields.
+
+## “The comment count does not match what I see in Planka”
+
+`planka_get_comments` returns **one page**. Planka serves comments 50 at a time
+and ignores `?limit`/`?page`, so `commentCount` is what that response carries,
+never the card's total.
+
+- the card's real total: `commentsTotal` from `planka_get_card`;
+- more comments to read: `hasMore: true` and a `nextBeforeId` to pass back as
+  `beforeId`;
+- everything at once: `all: true`, which reports `truncated: true` if the card
+  has more than 10 pages (500 comments).
+
+## “Forbidden: the agent user is probably not a member of this board”
+
+A 403 from Planka on a card, list, or label that reads fine in the browser. The
+agent user is a different user: either it is not a member of that board at all,
+or it is a **viewer** where an **editor** is needed.
+
+Fix it in Planka: open the board, add the agent user to the board members, and
+give it the editor role. Note that Planka answers **404** for this same cause
+often enough that a “not found” on an ID that worked a moment ago should be read
+as a permission problem first.
+
+## “Resource not found”, on an ID that exists
+
+The 404 now says which kind of ID the path expected (`labelId`, `listId`,
+`cardId`…). Three causes, in order:
+
+1. **the wrong kind of ID** — they are all strings of digits, so a `labelId`
+   passed as a `listId` looks perfectly valid until the request goes out. Get the
+   right one from `planka_board_summary` (labels and lists, with their IDs);
+2. **no permission** — see the entry above; Planka disguises 403 as 404;
+3. the entity really is gone.
+
+## “Returned HTML instead of JSON: this route does not exist in Planka 2.x”
+
+Every unknown `GET /api/...` falls through to the single-page app, which answers
+**200 with HTML**. The client detects it instead of parsing garbage.
+
+If it happened on a **write**, the message says so: the write may have landed.
+Re-read the entity before retrying, or you risk a duplicate. If it happened on a
+read, either the route genuinely does not exist in Planka 2.x (see
+`docs/planka-2x-gotchas.md`), or `PLANKA_BASE_URL` points at a proxy or an
+`http://` URL that redirects.
+
+## “Network error … could not reach Planka at `<url>`”
+
+The base URL is now part of the message, so the first check is whether that URL
+is the one you meant. Then: DNS, VPN/Tailscale, and whether the instance is up.
+A **POST** that fails this way may still have been received — re-read before
+retrying an upload.

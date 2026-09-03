@@ -131,7 +131,11 @@ describe("get_card never invents an empty comment list", () => {
       return cardBody();
     });
 
-    const result = await getCardTool.handler({ cardId: "card-1" });
+    // withComments is what makes get_card touch the comments endpoint at all.
+    const result = await getCardTool.handler({
+      cardId: "card-1",
+      withComments: 5,
+    });
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/Forbidden/);

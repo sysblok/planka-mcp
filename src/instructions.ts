@@ -21,7 +21,7 @@ export const SERVER_INSTRUCTIONS = `Planka MCP reads and writes a Planka 2.x kan
 
 IDs come from planka_get_structure or planka_board_summary. They look alike, so passing a label ID where a list ID belongs answers "Resource not found" rather than a type error.
 
-Before acting on a card, read ALL of its comments with planka_get_comments. The description says how the card was born; the comments say where it stands today, and the last one usually wins. Skipping them means redoing work or repeating a discarded attempt.
+Before acting on a card, read ALL of its comments: planka_get_comments, or planka_get_card with withComments (get_card returns a digest and NO comments unless asked). The description says how the card was born; the comments say where it stands today, and the last one usually wins. Comments page 50 at a time: trust hasMore and nextBeforeId, not the count in one answer.
 
 Reads return digests, not full records: descriptions are off unless you ask (withDescription), results are capped (limit, offset), and every scoped read reports total/returned/hasMore/nextOffset so a clipped answer is never mistaken for a complete one. Ask for the detail only once you know which card you want.
 

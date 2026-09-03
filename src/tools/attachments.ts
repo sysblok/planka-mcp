@@ -169,9 +169,15 @@ export const viewAttachmentTool = {
         }
       } else if (attachments.length === 1) {
         attachment = attachments[0];
+      } else if (attachments.length === 0) {
+        // "0 attachments — pass attachmentId. Available: none" asked for an id
+        // that cannot exist. There is nothing to view, and that is the message.
+        return errorResult(
+          `Card ${params.cardId} has no attachments, so there is nothing to view.`
+        );
       } else {
         return errorResult(
-          `Card has ${attachments.length} attachments — pass attachmentId. Available: ${attachments.map((a) => `${a.id} (${a.name})`).join(", ") || "none"}`
+          `Card has ${attachments.length} attachments — pass attachmentId. Available: ${attachments.map((a) => `${a.id} (${a.name})`).join(", ")}`
         );
       }
 

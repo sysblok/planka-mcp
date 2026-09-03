@@ -356,15 +356,28 @@ async function run() {
     cardId
   );
 
-  const details = await json("planka_get_card", { cardId });
+  // detail:"full" is what carries the task items and the whole description;
+  // the default digest returns counts and a 200-char preview.
+  const details = await json("planka_get_card", { cardId, detail: "full" });
   check(
     "planka_get_card returns the name, both tasks and the label",
     details?.card?.name === CARD_NAME &&
-      details?.tasks?.length === 2 &&
+      details?.tasks?.total === 2 &&
+      details?.tasks?.lists?.[0]?.items?.length === 2 &&
       details?.labels?.length === 1,
     details
   );
-  const taskId = details?.tasks?.[0]?.id;
+  const taskId = details?.tasks?.lists?.[0]?.items?.[0]?.id;
+
+  const digest = await json("planka_get_card", { cardId });
+  check(
+    "the digest counts the tasks without listing them, and reads no comments",
+    digest?.detail === "digest" &&
+      digest?.tasks?.total === 2 &&
+      digest?.tasks?.lists?.[0]?.items === undefined &&
+      !Array.isArray(digest?.comments),
+    digest
+  );
 
   const updated = await json("planka_update_card", {
     cardId,
@@ -376,7 +389,7 @@ async function run() {
     updated
   );
 
-  const reread = await json("planka_get_card", { cardId });
+  const reread = await json("planka_get_card", { cardId, detail: "full" });
   check(
     "the update persisted (verified by re-reading)",
     reread?.card?.description === "description updated by the smoke test",

@@ -6,12 +6,14 @@
  */
 import {
   createCard,
-  getCard,
   getCardLight,
+  getBoardNames,
   updateCard,
   moveCard,
   deleteCard,
 } from "../operations/cards.js";
+import { getComments, COMMENTS_PAGE_SIZE } from "../operations/comments.js";
+import { CardLightDetails } from "../operations/cards.js";
 import { UpdateCardParamsInput } from "../schemas/requests.js";
 import { createTasks } from "../operations/tasks.js";
 import { addLabelToCard } from "../operations/labels.js";
@@ -200,14 +202,119 @@ export const createCardTool = {
   },
 };
 
+/** Default size of the description preview in the digest. */
+const DEFAULT_DESCRIPTION_CHARS = 200;
+
+/** Ceiling for `descriptionChars`: past this, ask for detail: "full". */
+const MAX_DESCRIPTION_CHARS = 2000;
+
+/**
+ * Card labels resolved to names, keeping the ids the write tools need.
+ *
+ * The card response carries only the cardId<->labelId pairs; the names come
+ * from the board (see getBoardNames), so `names` may legitimately be missing.
+ */
+function labelsOf(
+  details: CardLightDetails,
+  names: Map<string, string | null> | undefined
+) {
+  return details.cardLabels.map((cl) => ({
+    id: cl.labelId,
+    name:
+      names?.get(cl.labelId) ??
+      details.labels.find((l) => l.id === cl.labelId)?.name ??
+      null,
+  }));
+}
+
+/** Assignees, from cardMemberships joined with the included users. */
+function membersOf(details: CardLightDetails) {
+  return details.cardMemberships.map((m) => ({
+    id: m.userId,
+    name: details.users.find((u) => u.id === m.userId)?.name ?? null,
+  }));
+}
+
+/**
+ * Tasks grouped by their checklist — never flattened.
+ *
+ * A card with "Backend 3/3" and "QA 0/4" says something a flat 3/7 does not,
+ * and Planka 2.x models exactly that (taskLists -> tasks by taskListId).
+ */
+function tasksOf(details: CardLightDetails, withItems: boolean) {
+  const lists = details.taskLists.map((tl) => {
+    const items = details.tasks.filter((t) => t.taskListId === tl.id);
+    return {
+      id: tl.id,
+      name: tl.name,
+      done: items.filter((t) => t.isCompleted).length,
+      total: items.length,
+      ...(withItems
+        ? {
+            items: items.map((t) => ({
+              id: t.id,
+              name: t.name,
+              isCompleted: t.isCompleted,
+              ...(t.assigneeUserId
+                ? {
+                    assignee:
+                      details.users.find((u) => u.id === t.assigneeUserId)
+                        ?.name ?? t.assigneeUserId,
+                  }
+                : {}),
+            })),
+          }
+        : {}),
+    };
+  });
+
+  // Tasks whose checklist did not come back must not vanish from the count.
+  const known = new Set(details.taskLists.map((tl) => tl.id));
+  const orphans = details.tasks.filter((t) => !known.has(t.taskListId));
+  if (orphans.length > 0) {
+    lists.push({
+      id: null as unknown as string,
+      name: "(ungrouped)",
+      done: orphans.filter((t) => t.isCompleted).length,
+      total: orphans.length,
+      ...(withItems
+        ? {
+            items: orphans.map((t) => ({
+              id: t.id,
+              name: t.name,
+              isCompleted: t.isCompleted,
+            })),
+          }
+        : {}),
+    });
+  }
+
+  return {
+    done: details.tasks.filter((t) => t.isCompleted).length,
+    total: details.tasks.length,
+    lists,
+  };
+}
+
+/** Custom field values resolved to their field name (full detail only). */
+function customFieldsOf(details: CardLightDetails) {
+  return details.customFieldValues.map((v) => ({
+    name:
+      details.customFields.find((f) => f.id === v.customFieldId)?.name ?? null,
+    content: v.content ?? null,
+  }));
+}
+
 /**
  * Tool: planka_get_card
- * Get full details of a card.
+ * A digest by default; the full record only when asked for.
  */
 export const getCardTool = {
   name: "planka_get_card",
   description:
-    "Full detail of one card: tasks, comments, labels and attachments.",
+    "One card as a digest: name, column, labels, members, checklist counts, attachment and comment counts, and the first 200 chars of the description. " +
+    'Comments are NOT included by default — pass withComments (a number, or "all") to read them. ' +
+    'detail:"full" adds the whole description, every task item, the attachment list and the custom fields.',
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -215,54 +322,145 @@ export const getCardTool = {
         type: "string",
         description: "The card ID",
       },
+      detail: {
+        type: "string",
+        enum: ["digest", "full"],
+        description:
+          'How much of the card to return. "digest" (default) is counts plus a description preview; "full" is the whole description, task items, attachments and custom fields.',
+      },
+      withComments: {
+        description:
+          'Comments to include: 0 (default, none), a number for the N most recent, or "all" to page through every comment.',
+        anyOf: [{ type: "number" }, { type: "string", enum: ["all"] }],
+      },
+      descriptionChars: {
+        type: "number",
+        description:
+          'Length of the description preview in the digest (default 200, max 2000). Ignored when detail is "full".',
+      },
     },
     required: ["cardId"],
   },
-  handler: async (params: { cardId: string }) => {
+  handler: async (params: {
+    cardId: string;
+    detail?: "digest" | "full";
+    withComments?: number | "all";
+    descriptionChars?: number;
+  }) => {
     try {
-      const details = await getCard({ cardId: params.cardId });
+      const full = params.detail === "full";
+      const wantAll = params.withComments === "all";
+      const wantN =
+        typeof params.withComments === "number"
+          ? Math.max(0, Math.floor(params.withComments))
+          : 0;
+      const wantComments = wantAll || wantN > 0;
 
-      const formatted = {
-        card: {
-          id: details.card.id,
-          name: details.card.name,
-          description: details.card.description,
-          listId: details.card.listId,
-          boardId: details.card.boardId,
-          dueDate: details.card.dueDate,
-          isCompleted: details.card.isCompleted,
-          createdAt: details.card.createdAt,
-        },
-        tasks: details.tasks.map((t) => ({
-          id: t.id,
-          name: t.name,
-          isCompleted: t.isCompleted,
-        })),
-        comments: details.comments.map((c) => ({
+      const [details, comments] = await Promise.all([
+        getCardLight({ cardId: params.cardId }),
+        wantComments
+          ? getComments({
+              cardId: params.cardId,
+              ...(wantAll
+                ? { all: true }
+                : { limit: Math.min(wantN, COMMENTS_PAGE_SIZE) }),
+              order: "asc",
+            })
+          : Promise.resolve(null),
+      ]);
+
+      // Names for the ids the card carries. Best effort: a board that cannot
+      // be read costs the names, never the card.
+      const names = await getBoardNames(details.card.boardId);
+      const listName = names?.lists.get(details.card.listId) ?? null;
+
+      const description = details.card.description ?? "";
+      const previewChars = Math.max(
+        0,
+        Math.min(
+          params.descriptionChars ?? DEFAULT_DESCRIPTION_CHARS,
+          MAX_DESCRIPTION_CHARS
+        )
+      );
+      const preview = description.slice(0, previewChars);
+
+      const card: Record<string, unknown> = {
+        id: details.card.id,
+        name: details.card.name,
+        listId: details.card.listId,
+        ...(listName !== null ? { listName } : {}),
+        boardId: details.card.boardId,
+        dueDate: details.card.dueDate ?? null,
+        isDueCompleted:
+          details.card.isDueCompleted ??
+          details.card.isDueDateCompleted ??
+          null,
+        isClosed: details.card.isClosed ?? null,
+        createdAt: details.card.createdAt,
+        updatedAt: details.card.updatedAt ?? null,
+      };
+
+      if (full) {
+        card.description = details.card.description ?? null;
+      } else {
+        card.descriptionPreview = preview;
+        card.descriptionChars = description.length;
+        if (description.length > preview.length) {
+          card.descriptionTruncated = true;
+        }
+      }
+
+      // Planka's own counter, not something this server derived.
+      const commentsTotal = details.card.commentsTotal ?? null;
+
+      const body: Record<string, unknown> = {
+        detail: full ? "full" : "digest",
+        card,
+        labels: labelsOf(details, names?.labels),
+        members: membersOf(details),
+        tasks: tasksOf(details, full),
+        attachmentsCount: details.attachments.length,
+        commentsTotal,
+      };
+
+      if (full) {
+        body.attachments = details.attachments.map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type ?? null,
+          mimeType: a.data?.mimeType ?? null,
+          sizeBytes: a.data?.size ?? null,
+        }));
+        body.customFields = customFieldsOf(details);
+      }
+
+      if (comments) {
+        body.comments = comments.comments.map((c) => ({
           id: c.id,
           text: c.text,
           author: c.authorName,
           createdAt: c.createdAt,
-        })),
-        labels: details.cardLabels.map((cl) => {
-          const label = details.labels.find((l) => l.id === cl.labelId);
-          return {
-            id: cl.labelId,
-            name: label?.name,
-            color: label?.color,
-          };
-        }),
-        attachments: details.attachments.map((a) => ({
-          id: a.id,
-          name: a.name,
-        })),
-      };
+        }));
+        body.commentsReturned = comments.comments.length;
+        body.commentsOrder = "oldest-first";
+        if (comments.hasMore) body.commentsHasMore = true;
+        if (comments.nextBeforeId) body.nextBeforeId = comments.nextBeforeId;
+        if (comments.truncated) body.commentsTruncated = true;
+      } else if (commentsTotal !== 0) {
+        body.comments =
+          'not read — pass withComments (a number, or "all"), or call planka_get_comments';
+      }
+
+      if (!full) {
+        body.more =
+          'detail:"full" for the whole description, task items, attachments and custom fields';
+      }
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(formatted),
+            text: JSON.stringify(body),
           },
         ],
       };

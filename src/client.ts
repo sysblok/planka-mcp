@@ -250,7 +250,12 @@ export class PlankaClient {
    * unknown GET that way, and an http:// base URL redirected to https:// ends
    * up here too. Indistinguishable from success if only the status is read.
    */
-  private assertNotHtml(response: Response, data: unknown, what: string): void {
+  private assertNotHtml(
+    response: Response,
+    data: unknown,
+    what: string,
+    method: string
+  ): void {
     if (data !== null) return;
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/html")) return;
@@ -259,8 +264,16 @@ export class PlankaClient {
       config.baseUrl.startsWith("http://") || response.redirected
         ? " Your HTTP URL probably redirects to HTTPS; configure the final https:// URL directly."
         : " Check that PLANKA_BASE_URL points to the Planka API origin, not a proxy error page.";
+    // A non-GET reaching here went somewhere: the SPA catch-all is GET-only, so
+    // HTML on a write means a redirect or a proxy, and the write may have run.
+    const writeHint =
+      method === "GET"
+        ? ""
+        : " This was a WRITE: it MAY have landed even though the answer is unusable — re-read the entity before retrying.";
     throw new PlankaNetworkError(
-      `${what} returned HTML instead of JSON: that path does not exist in this Planka.${redirectHint}`
+      `${what} returned HTML instead of JSON: this route does not exist in Planka 2.x — ` +
+        "every unknown GET under /api falls through to the single-page app, which answers 200 with HTML." +
+        `${redirectHint}${writeHint}`
     );
   }
 
@@ -301,9 +314,16 @@ export class PlankaClient {
       );
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new PlankaNetworkError(`Request timeout: ${method} ${path}`, error);
+        throw new PlankaNetworkError(
+          `Request timeout: ${method} ${path} (Planka at ${config.baseUrl})`,
+          error
+        );
       }
-      throw new PlankaNetworkError(`Network error: ${method} ${path}`, error);
+      throw new PlankaNetworkError(
+        `Network error: ${method} ${path} — could not reach Planka at ${config.baseUrl}. ` +
+          "Check PLANKA_BASE_URL, DNS and that the instance is up.",
+        error
+      );
     }
 
     // Handle 204 No Content
@@ -323,7 +343,7 @@ export class PlankaClient {
       throw createPlankaError(response.status, data, `${method} ${path}`);
     }
 
-    this.assertNotHtml(response, data, `${method} ${path}`);
+    this.assertNotHtml(response, data, `${method} ${path}`, method);
 
     return data as T;
   }
@@ -353,9 +373,16 @@ export class PlankaClient {
       );
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new PlankaNetworkError(`Request timeout: POST ${path}`, error);
+        throw new PlankaNetworkError(
+          `Request timeout: POST ${path} (Planka at ${config.baseUrl})`,
+          error
+        );
       }
-      throw new PlankaNetworkError(`Network error: POST ${path}`, error);
+      throw new PlankaNetworkError(
+        `Network error: POST ${path} — could not reach Planka at ${config.baseUrl}. ` +
+          "The upload MAY have started; re-read the card's attachments before retrying.",
+        error
+      );
     }
 
     const data = await this.safeParseJson(response);
@@ -400,9 +427,15 @@ export class PlankaClient {
       );
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        throw new PlankaNetworkError(`Request timeout: GET ${url}`, error);
+        throw new PlankaNetworkError(
+          `Request timeout: GET ${url} (Planka at ${config.baseUrl})`,
+          error
+        );
       }
-      throw new PlankaNetworkError(`Network error: GET ${url}`, error);
+      throw new PlankaNetworkError(
+        `Network error: GET ${url} — could not reach Planka at ${config.baseUrl}.`,
+        error
+      );
     }
 
     if (!response.ok) {

@@ -3,9 +3,12 @@
  */
 import {
   createComment,
+  getComments,
   getCommentsForCard,
   updateComment,
   deleteComment,
+  COMMENTS_PAGE_SIZE,
+  COMMENTS_MAX_PAGES,
 } from "../operations/comments.js";
 import {
   verifiedDelete,
@@ -69,13 +72,18 @@ export const addCommentTool = {
   },
 };
 
+/** Comments returned when the caller does not say. Planka's page holds 50. */
+const DEFAULT_LIMIT = 20;
+
 /**
  * Tool: planka_get_comments
- * Get all comments on a card.
+ * One honest page of a card's comments, oldest first.
  */
 export const getCommentsTool = {
   name: "planka_get_comments",
-  description: "Get all comments on a card.",
+  description:
+    "Read a card's comments, oldest first. Planka serves them 50 at a time: this returns `limit` of them (default 20) plus hasMore and nextBeforeId to continue. " +
+    'Use all:true to walk every page (up to ' + COMMENTS_MAX_PAGES + ' of them, then truncated:true). commentCount is what THIS response carries, never the card total.',
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -83,27 +91,71 @@ export const getCommentsTool = {
         type: "string",
         description: "The card ID",
       },
+      limit: {
+        type: "number",
+        description: `How many comments to return (default 20, max ${COMMENTS_PAGE_SIZE} — Planka's page size).`,
+      },
+      beforeId: {
+        type: "string",
+        description:
+          "Cursor: returns comments OLDER than this comment id. Pass the nextBeforeId of the previous answer.",
+      },
+      all: {
+        type: "boolean",
+        description:
+          `Read every page instead of one (up to ${COMMENTS_MAX_PAGES} pages). Sets truncated:true if the card has even more.`,
+      },
+      order: {
+        type: "string",
+        enum: ["asc", "desc"],
+        description:
+          'Reading order: "asc" (default) oldest first, the order the thread was written; "desc" newest first.',
+      },
     },
     required: ["cardId"],
   },
-  handler: async (params: { cardId: string }) => {
+  handler: async (params: {
+    cardId: string;
+    limit?: number;
+    beforeId?: string;
+    all?: boolean;
+    order?: "asc" | "desc";
+  }) => {
     try {
-      const comments = await getCommentsForCard({ cardId: params.cardId });
+      const result = await getComments({
+        cardId: params.cardId,
+        ...(params.all ? { all: true } : { limit: params.limit ?? DEFAULT_LIMIT }),
+        ...(params.beforeId ? { beforeId: params.beforeId } : {}),
+        order: params.order ?? "asc",
+      });
+
+      const body: Record<string, unknown> = {
+        cardId: params.cardId,
+        // Comments in THIS response. The card's real total only ever comes
+        // from planka_get_card (Planka's own commentsTotal).
+        commentCount: result.comments.length,
+        order: params.order ?? "asc",
+        hasMore: result.hasMore,
+        ...(result.nextBeforeId ? { nextBeforeId: result.nextBeforeId } : {}),
+        ...(result.truncated
+          ? {
+              truncated: true,
+              truncatedReason: `stopped after ${result.pagesFetched} pages of ${COMMENTS_PAGE_SIZE}; pass beforeId=nextBeforeId to keep reading`,
+            }
+          : {}),
+        comments: result.comments.map((c) => ({
+          id: c.id,
+          text: c.text,
+          author: c.authorName,
+          createdAt: c.createdAt,
+        })),
+      };
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({
-              cardId: params.cardId,
-              commentCount: comments.length,
-              comments: comments.map((c) => ({
-                id: c.id,
-                text: c.text,
-                author: c.authorName,
-                createdAt: c.createdAt,
-              })),
-            }),
+            text: JSON.stringify(body),
           },
         ],
       };
