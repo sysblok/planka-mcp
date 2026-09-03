@@ -79,7 +79,6 @@ describe("access policy applied to the registry", () => {
       "planka_get_board",
       "planka_board_summary",
       "planka_list_lists",
-      "planka_find_cards",
     ]) {
       expect(withoutDefault.get(name)!.inputSchema.required, name).toContain(
         "boardId"
@@ -94,6 +93,19 @@ describe("access policy applied to the registry", () => {
         name
       ).toMatch(/defaults to PLANKA_DEFAULT_BOARD_ID \(1234\)/);
     }
+
+    // planka_find_cards never requires boardId: with a listId the list names
+    // its own board. It still gets the note about the default.
+    for (const map of [withoutDefault, withDefault]) {
+      expect(map.get("planka_find_cards")!.inputSchema.required ?? []).not.toContain(
+        "boardId"
+      );
+    }
+    expect(
+      (withDefault.get("planka_find_cards")!.inputSchema.properties.boardId as {
+        description: string;
+      }).description
+    ).toMatch(/defaults to PLANKA_DEFAULT_BOARD_ID \(1234\)/);
 
     // The registry itself is untouched: the copy is what carries the policy.
     const original = allTools.find((t) => t.name === "planka_get_board")!;

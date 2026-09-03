@@ -3,6 +3,8 @@
  */
 import { getStructure } from "../operations/projects.js";
 import { getBoardWithTaskCounts } from "../operations/boards.js";
+import { parseInput } from "../errors.js";
+import { GetBoardSchema } from "../schemas/requests.js";
 
 /**
  * Tool: planka_get_structure
@@ -11,7 +13,8 @@ import { getBoardWithTaskCounts } from "../operations/boards.js";
 export const getStructureTool = {
   name: "planka_get_structure",
   description:
-    "Projects, boards and lists with their IDs. The source of the IDs every other tool needs.",
+    "Projects, boards and lists with their IDs. The source of the IDs every other tool needs. " +
+    "Columns cost one board read per board: pass withLists: false for the projects and boards alone, in a single request.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -19,10 +22,18 @@ export const getStructureTool = {
         type: "string",
         description: "Optional: Get structure for a specific project only",
       },
+      withLists: {
+        type: "boolean",
+        description:
+          "Include each board's columns. Default true; false answers projects and boards in one request (planka_board_summary also lists the columns, with their counts).",
+      },
     },
   },
-  handler: async (params: { projectId?: string }) => {
-    const structure = await getStructure({ projectId: params.projectId });
+  handler: async (params: { projectId?: string; withLists?: boolean }) => {
+    const structure = await getStructure({
+      projectId: params.projectId,
+      withLists: params.withLists,
+    });
 
     // Format for readability
     const formatted = structure.map((project) => ({
@@ -33,12 +44,16 @@ export const getStructureTool = {
       boards: project.boards.map((b) => ({
         id: b.board.id,
         name: b.board.name,
-        lists: b.lists
-          .filter((l) => l.name !== null) // Filter out archive/trash
-          .map((l) => ({
-            id: l.id,
-            name: l.name,
-          })),
+        ...(params.withLists === false
+          ? {}
+          : {
+              lists: b.lists
+                .filter((l) => l.name !== null) // Filter out archive/trash
+                .map((l) => ({
+                  id: l.id,
+                  name: l.name,
+                })),
+            }),
       })),
     }));
 
@@ -60,24 +75,41 @@ export const getStructureTool = {
 export const getBoardTool = {
   name: "planka_get_board",
   description:
-    "Whole board in one payload: every list, card and label. Expensive — prefer the scoped reads.",
+    "DEPRECATED: use planka_board_summary + planka_find_cards. " +
+    "Whole board in one payload: every list, card and label — the most expensive read of the set, and it grows with the board. " +
+    "It returns at most `limit` cards (50 by default) and reports total/truncated when it clips. " +
+    "Archive and trash columns are never included (excludesArchived).",
   inputSchema: {
     type: "object" as const,
     properties: {
       boardId: {
         type: "string",
-        description: "The board ID",
+        description:
+          "The board ID. Optional when the server has PLANKA_DEFAULT_BOARD_ID.",
       },
       includeTaskCounts: {
         type: "boolean",
         description: "Include task completion counts for each card",
         default: true,
       },
+      limit: {
+        type: "number",
+        description:
+          "Max cards across the whole board. Default 50, max 200. Beyond it the response carries truncated: true.",
+      },
     },
     required: ["boardId"],
   },
-  handler: async (params: { boardId: string; includeTaskCounts?: boolean }) => {
-    const details = await getBoardWithTaskCounts({ boardId: params.boardId });
+  handler: async (params: {
+    boardId?: string;
+    includeTaskCounts?: boolean;
+    limit?: number;
+  }) => {
+    const { boardId, includeTaskCounts, limit } = parseInput(
+      GetBoardSchema,
+      params
+    );
+    const details = await getBoardWithTaskCounts({ boardId });
 
     // Group cards by list for readability
     const cardsByList = new Map<string, typeof details.cards>();
@@ -101,11 +133,20 @@ export const getBoardTool = {
       labelsByCard.set(cl.cardId, labels);
     }
 
+    // Cards are handed out in board order until `limit` runs out; the rest is
+    // reported, never dropped in silence.
+    let budget = limit;
+    const totalCards = details.cards.length;
+
     const formatted = {
       board: {
         id: details.board.id,
         name: details.board.name,
       },
+      deprecated:
+        "planka_get_board is deprecated: use planka_board_summary for the shape of the board and planka_find_cards for its cards.",
+      excludesArchived: true,
+      totalCards,
       labels: details.labels.map((l) => ({
         id: l.id,
         name: l.name,
@@ -114,12 +155,18 @@ export const getBoardTool = {
       lists: details.lists
         .filter((l) => l.name !== null) // Filter archive/trash
         .map((list) => {
-          const listCards = (cardsByList.get(list.id) || []).sort(
+          const allListCards = (cardsByList.get(list.id) || []).sort(
             (a, b) => a.position - b.position
           );
+          const listCards = allListCards.slice(0, Math.max(budget, 0));
+          budget -= listCards.length;
           return {
             id: list.id,
             name: list.name,
+            cardCount: allListCards.length,
+            ...(listCards.length < allListCards.length
+              ? { returned: listCards.length }
+              : {}),
             cards: listCards.map((card) => {
               const cardData: Record<string, unknown> = {
                 id: card.id,
@@ -146,7 +193,7 @@ export const getBoardTool = {
                 cardData.labels = cardLabels;
               }
 
-              if (params.includeTaskCounts !== false && card.taskCount > 0) {
+              if (includeTaskCounts !== false && card.taskCount > 0) {
                 cardData.tasks = `${card.completedTaskCount}/${card.taskCount}`;
               }
 
@@ -156,11 +203,22 @@ export const getBoardTool = {
         }),
     };
 
+    const returnedCards = limit - budget;
+
     return {
       content: [
         {
           type: "text" as const,
-          text: JSON.stringify(formatted),
+          text: JSON.stringify({
+            ...formatted,
+            returnedCards,
+            ...(returnedCards < totalCards
+              ? {
+                  truncated: true,
+                  note: `Only ${returnedCards} of ${totalCards} cards are in this response. Raise limit, or read one column with planka_find_cards({listId}).`,
+                }
+              : {}),
+          }),
         },
       ],
     };

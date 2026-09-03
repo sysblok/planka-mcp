@@ -17,7 +17,7 @@
  * Budget: 1500-2500 chars, hard ceiling 3000. Anything longer belongs in docs
  * or in an MCP resource, not here. `tests/unit/instructions.test.ts` enforces it.
  */
-export const SERVER_INSTRUCTIONS = `Planka MCP reads and writes a Planka 2.x kanban board. Open every session with planka_board_summary: one call returns each column with its card count, every label, and the cards awaiting a decision. Never call planka_get_board, which dumps the whole board. Narrow from the summary: planka_list_lists for a board's shape, planka_list_cards for one column, planka_find_cards to search, planka_get_card for one card. Every ID is a string of digits and is never guessed.
+export const SERVER_INSTRUCTIONS = `Planka MCP reads and writes a Planka 2.x kanban board. Open every session with planka_board_summary: one call returns each column with its card count and every label. planka_get_board is DEPRECATED — never call it. Narrow from the summary with planka_find_cards: with a listId it reads one whole column in a single request (nothing clipped), without it it searches the board by text, label or member. planka_get_card for one card. Every ID is a string of digits and is never guessed.
 
 IDs come from planka_get_structure or planka_board_summary. They look alike, so passing a label ID where a list ID belongs answers "Resource not found" rather than a type error.
 

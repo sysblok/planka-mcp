@@ -12,6 +12,7 @@ import {
   getBoardSummary,
   listCards,
 } from "../../src/operations/boards.js";
+import { resetPolicyCache } from "../../src/config/policy.js";
 
 const timestamps = {
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -121,8 +122,12 @@ describe("scoped board reads", () => {
     expect(result.totalCards).toBe(3);
   });
 
-  it("picks the decision column by name and flags the unblocked cards first", async () => {
-    const summary = await getBoardSummary({ boardId: "board-1" });
+  it("picks the named column and flags the unblocked cards first", async () => {
+    const summary = await getBoardSummary({
+      boardId: "board-1",
+      cardsFrom: ["decision"],
+      highlightLabel: "decidido",
+    });
 
     expect(summary.cardsFrom).toEqual(["🤔 Necesita tu decisión"]);
     expect(summary.highlightedCount).toBe(1);
@@ -130,6 +135,61 @@ describe("scoped board reads", () => {
     expect(summary.cards.every((card) => card.description === undefined)).toBe(
       true
     );
+    expect(summary.warnings).toEqual([]);
+  });
+
+  it("returns columns and no cards when nothing says which column to open", async () => {
+    const summary = await getBoardSummary({ boardId: "board-1" });
+
+    expect(summary.cards).toEqual([]);
+    expect(summary.cardsFrom).toEqual([]);
+    expect(summary.total).toBe(0);
+    expect(summary.totalCards).toBe(3);
+    expect(summary.lists).toHaveLength(2);
+    expect(summary.labels).toEqual([{ id: "label-go", name: "decidido" }]);
+    // No board vocabulary is hardcoded any more.
+    expect(summary.highlightLabel).toBeUndefined();
+    expect(summary.warnings).toEqual([]);
+  });
+
+  it("takes its defaults from the environment, not from the source", async () => {
+    process.env.PLANKA_SUMMARY_DECISION_LISTS = "decision";
+    process.env.PLANKA_SUMMARY_HIGHLIGHT_LABEL = "decidido";
+    resetPolicyCache();
+    try {
+      const summary = await getBoardSummary({ boardId: "board-1" });
+      expect(summary.cardsFrom).toEqual(["🤔 Necesita tu decisión"]);
+      expect(summary.highlightLabel).toBe("decidido");
+      expect(summary.highlightedCount).toBe(1);
+    } finally {
+      delete process.env.PLANKA_SUMMARY_DECISION_LISTS;
+      delete process.env.PLANKA_SUMMARY_HIGHLIGHT_LABEL;
+      resetPolicyCache();
+    }
+  });
+
+  it("warns instead of answering an empty column for a cardsFrom typo", async () => {
+    const summary = await getBoardSummary({
+      boardId: "board-1",
+      cardsFrom: ["probalo"],
+    });
+
+    expect(summary.cards).toEqual([]);
+    expect(summary.warnings.join(" ")).toContain("probalo");
+    // ...and says which columns do exist.
+    expect(summary.warnings.join(" ")).toContain("Merged");
+  });
+
+  it("warns when the highlight label is not on the board", async () => {
+    const summary = await getBoardSummary({
+      boardId: "board-1",
+      cardsFrom: ["decision"],
+      highlightLabel: "ghost",
+    });
+
+    expect(summary.highlightedCount).toBe(0);
+    expect(summary.warnings.join(" ")).toMatch(/No label named "ghost"/);
+    expect(summary.warnings.join(" ")).toContain("decidido");
   });
 
   it("searches names and descriptions, accent- and case-insensitively", async () => {
@@ -145,7 +205,7 @@ describe("scoped board reads", () => {
   it("says which labels exist when the requested one does not", async () => {
     const result = await findCards({ boardId: "board-1", labelName: "ghost" });
     expect(result.total).toBe(0);
-    expect(result.warning).toContain("decidido");
+    expect(result.warnings.join(" ")).toContain("decidido");
   });
 
   it("refuses an unfiltered search instead of returning the whole board", async () => {

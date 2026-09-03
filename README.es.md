@@ -197,6 +197,18 @@ una versión vieja.
 | `PLANKA_READ_ONLY` | `true` o `1` | Las catorce tools de escritura desaparecen del `tools/list` y se rechazan si igual las llaman |
 | `PLANKA_DISABLED_TOOLS` | nombres de tool separados por coma | Apaga tools puntuales. El prefijo `planka_` es opcional: `get_board` y `planka_get_board` son lo mismo |
 | `PLANKA_PROTECTED_LIST_IDS` | list ids separados por coma | Rechaza crear o mover cards **hacia** esas listas, y editar o borrar las listas mismas |
+| `PLANKA_SUMMARY_DECISION_LISTS` | nombres o ids de columna separados por coma | De qué columnas trae cards `planka_board_summary` cuando la llamada no lo dice. Sin setear: no devuelve cards, sólo la forma del board |
+| `PLANKA_SUMMARY_HIGHLIGHT_LABEL` | un nombre de label | El label que marca una card como desbloqueada en `planka_board_summary`. Sin setear: no se resalta nada |
+
+**El server no trae vocabulario de board propio.** Los nombres de columna y el
+label de "listo" son tuyos, en tu idioma: esas dos variables son cómo un deploy
+le cuenta al resumen cómo es su board. Un hint que no matchea nada vuelve en
+`warnings`, nunca como respuesta vacía.
+
+```json
+"PLANKA_SUMMARY_DECISION_LISTS": "decision,probalo,miralo",
+"PLANKA_SUMMARY_HIGHLIGHT_LABEL": "decidido"
+```
 
 **Las allowlists son por id, nunca por nombre.** Cualquier editor del board puede
 renombrarlo, así que una allowlist por nombre se saltea con una edición. Los ids
@@ -231,11 +243,11 @@ Planka; no los adivines.
 | Tool | Qué hace |
 |---|---|
 | `planka_get_structure` | Lista proyectos, boards y listas visibles |
-| `planka_get_board` | Lee un board con listas, cards, labels y conteos opcionales de tareas |
-| `planka_list_lists` | Lista las columnas de un board con sus conteos de cards, sin las cards |
-| `planka_board_summary` | Resumen en una llamada: columnas, labels y las cards que esperan una decisión |
-| `planka_list_cards` | Lee una sola columna, paginada y sin descripciones por defecto |
-| `planka_find_cards` | Busca cards de un board por label, texto o columna |
+| `planka_get_board` | **Deprecada.** Lee el board entero, hasta `limit` cards |
+| `planka_board_summary` | Resumen en una llamada: columnas con conteos, labels con ids y, si se piden, las cards de las columnas nombradas |
+| `planka_find_cards` | La única lectura de cards: una columna (`listId`), o un board buscado por texto, label o miembro |
+| `planka_list_lists` | Alias de `planka_board_summary` con `cardsFrom: []` |
+| `planka_list_cards` | Alias de `planka_find_cards` con `listId` |
 | `planka_create_card` | Crea una card y puede agregar tareas y labels |
 | `planka_get_card` | Digest de una card; `detail: "full"` y `withComments` a pedido |
 | `planka_update_card` | Actualiza título, descripción, vencimiento o estado de completado |
@@ -263,13 +275,18 @@ Planka; no los adivines.
 | `planka_archive_card` | Archiva una card en el archivo oculto del board, o la restaura |
 | `planka_move_list_cards` | Mueve todas las cards de una columna a otra, con conteos |
 
-`planka_get_board` devuelve el board entero, que suele ser más de lo que la
-pregunta necesita. Las cuatro lecturas acotadas responden preguntas más chicas y
-devuelven mucho menos texto: medido sobre un board de 100 cards,
-`planka_list_lists` devolvió 39 veces menos que `planka_get_board`,
-`planka_board_summary` 16 veces menos, y `planka_find_cards` entre 18 y 56 veces
-menos según el filtro. Además informan `total`, `returned` y `hasMore`, así que
-una respuesta recortada nunca parece completa.
+Las lecturas siguen un principio: **digest chico por defecto, el detalle por
+parámetros**. `planka_board_summary` abre una sesión en una llamada;
+`planka_find_cards` con `listId` lee una columna entera en UNA request contra
+`GET /api/lists/:id`, así que `total` es el tamaño real de la columna y la
+respuesta trae `truncated: false`; la misma tool sin `listId` busca en el board.
+Medido sobre el board de referencia de 185 cards, la deprecada
+`planka_get_board` pasó de 56.112 a 17.215 caracteres y `planka_get_structure`
+(`withLists: false`) de 696 a 203, y una columna de 159 cards pasó de cinco
+requests a dos. Toda lectura informa `total`, `returned` y `hasMore`, así que
+una respuesta recortada nunca parece completa, y toda lectura derivada del board
+trae `excludesArchived: true` porque Planka deja archive y trash afuera del
+board show.
 
 Todos los campos y un payload completo por tool están en la
 [referencia de tools](docs/tools.md).

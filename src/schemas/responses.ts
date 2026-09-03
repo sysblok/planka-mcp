@@ -13,8 +13,8 @@ import {
   CommentSchema,
   UserSchema,
   CardLabelSchema,
-  AttachmentSchema,
   CardMembershipSchema,
+  AttachmentSchema,
   CustomFieldSchema,
   CustomFieldValueSchema,
 } from "./entities.js";
@@ -73,6 +73,7 @@ export const BoardIncludedSchema = z
     cards: z.array(CardSchema).optional(),
     labels: z.array(LabelSchema).optional(),
     cardLabels: z.array(CardLabelSchema).optional(),
+    cardMemberships: z.array(CardMembershipSchema).optional(),
     taskLists: z.array(TaskListSchema).optional(),
     tasks: z.array(TaskSchema).optional(),
     users: z.array(UserSchema).optional(),

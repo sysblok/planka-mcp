@@ -120,6 +120,15 @@ export const CardSchema = z.object({
   dueDate: z.string().nullable().optional(),
   isDueDateCompleted: z.boolean().optional(),
   isCompleted: z.boolean().optional(),
+  /**
+   * Planka 2.x names for the two flags above. The API row carries
+   * `isDueCompleted` and `isClosed`; the 1.x-era aliases stay for callers that
+   * still read them.
+   */
+  isDueCompleted: z.boolean().nullable().optional(),
+  isClosed: z.boolean().nullable().optional(),
+  /** Number of comments on the card. Planka computes it; reads never page it. */
+  commentsTotal: z.number().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string().nullable().optional(),
   /**
@@ -129,17 +138,6 @@ export const CardSchema = z.object({
    * never displayed.
    */
   listChangedAt: z.string().nullable().optional(),
-  /**
-   * Planka 2.x card-row fields the digest reads. All optional: older Planka
-   * releases and the leaner write echoes do not carry them.
-   *
-   * `isDueCompleted` is the 2.x spelling; `isDueDateCompleted` above is the
-   * legacy one. Read paths accept either.
-   */
-  isDueCompleted: z.boolean().nullable().optional(),
-  isClosed: z.boolean().nullable().optional(),
-  /** How many comments the card has — the ONLY total Planka reports. */
-  commentsTotal: z.number().nullable().optional(),
   /** Timer object; shape is left open on purpose (read-only field). */
   stopwatch: z
     .object({
