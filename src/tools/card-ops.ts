@@ -12,7 +12,11 @@ import {
   moveCardToList,
   noArchiveList,
 } from "../operations/archive.js";
-import { countListCards, moveListCards } from "../operations/lists.js";
+import {
+  bulkMoveClosedListToArchive,
+  moveCardsOneByOne,
+  readListState,
+} from "../operations/lists.js";
 import { verifiedWrite, writeResult } from "../operations/verify.js";
 import { assertBoardAllowed, assertListWritable } from "../config/policy.js";
 import { PlankaError } from "../errors.js";
@@ -241,12 +245,18 @@ export const archiveCardTool = {
 
 /**
  * Tool: planka_move_list_cards
+ *
+ * Planka's own bulk endpoint looks like the implementation of this tool and is
+ * not: it only archives a whole `closed` column, and answers 403 "Not enough
+ * rights" for anything else (see `bulkMoveClosedListToArchive`). So the tool
+ * uses it where it applies and moves card by card everywhere else — the
+ * promise to the caller is the same either way, and `strategy` says which ran.
  */
 export const moveListCardsTool = {
   name: "planka_move_list_cards",
   description:
-    "Move EVERY card of one column into another, in one Planka call. Counts both columns before " +
-    "and after; verified is false when the numbers do not add up.",
+    "Move EVERY card of one column into another. Counts both columns before and after; verified " +
+    "is false when the numbers do not add up. Reports partial moves rather than a smaller success.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -274,10 +284,19 @@ export const moveListCardsTool = {
       assertListWritable(params.toListId, undefined, "move cards into");
       assertListWritable(params.fromListId, undefined, "move cards out of");
 
-      const fromBefore = await countListCards(params.fromListId);
-      const toBefore = await countListCards(params.toListId);
+      const from = await readListState(params.fromListId);
+      if (!from) {
+        return errorResult(
+          `List ${params.fromListId} cannot be read. Planka's hidden archive and trash lists ` +
+            `answer 404 here, and so does a list id that does not exist.`
+        );
+      }
 
-      if (fromBefore === 0) {
+      // The destination may legitimately be unreadable: the archive list is.
+      const to = await readListState(params.toListId);
+      const toBefore = to?.count ?? null;
+
+      if (from.count === 0) {
         return {
           content: [
             {
@@ -295,31 +314,65 @@ export const moveListCardsTool = {
         };
       }
 
+      // Planka's bulk call only accepts closed -> archive. Everywhere else it
+      // answers 403, so it is not even attempted. The board show that resolves
+      // the archive id is expensive, so it is only read when the destination
+      // could BE the archive — an unreadable list — and the source is closed.
+      let canBulk = false;
+      if (from.type === "closed" && to === null && from.boardId) {
+        const { archiveListId } = await getBoardSystemLists(from.boardId);
+        canBulk = archiveListId === params.toListId;
+      }
+
+      const cards = from.cardIds.map((id) => ({
+        id,
+        position: from.positions.get(id) ?? null,
+      }));
+
+      let failed: Array<{ cardId: string; reason: string }> = [];
       const written = await verifiedWrite({
-        write: () =>
-          moveListCards({
-            fromListId: params.fromListId,
-            toListId: params.toListId,
-          }),
+        write: async () => {
+          if (canBulk) {
+            await bulkMoveClosedListToArchive({
+              fromListId: params.fromListId,
+              toListId: params.toListId,
+            });
+            return "bulk" as const;
+          }
+          failed = await moveCardsOneByOne({ cards, toListId: params.toListId });
+          return "perCard" as const;
+        },
         reread: async () => ({
-          from: await countListCards(params.fromListId),
-          to: await countListCards(params.toListId),
+          from: (await readListState(params.fromListId))?.count ?? null,
+          to: (await readListState(params.toListId))?.count ?? null,
         }),
-        landed: (after) =>
-          after.from === 0 && after.to === toBefore + fromBefore,
+        landed: (after) => {
+          if (after.from !== 0) return false;
+          // An unreadable destination (the archive) cannot be counted; an empty
+          // source plus no failed PATCH is the whole proof available.
+          if (after.to === null || toBefore === null) return failed.length === 0;
+          return after.to === toBefore + from.count;
+        },
       });
 
-      const fromAfter = written.after?.from ?? fromBefore;
+      const fromAfter = written.after?.from ?? from.count;
       const toAfter = written.after?.to ?? toBefore;
 
       return writeResult(
         {
           fromListId: params.fromListId,
           toListId: params.toListId,
-          moved: fromBefore - fromAfter,
+          strategy: written.result,
+          moved: from.count - (fromAfter ?? from.count),
           fromRemaining: fromAfter,
           toTotal: toAfter,
-          expectedTotal: toBefore + fromBefore,
+          ...(toBefore === null
+            ? {
+                toCountUnavailable:
+                  "the destination list cannot be read (Planka hides archive and trash), so only the source was counted",
+              }
+            : { expectedTotal: toBefore + from.count }),
+          ...(failed.length ? { failed } : {}),
         },
         written
       );

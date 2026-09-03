@@ -51,8 +51,10 @@ All notable changes to this project are documented here.
   - `planka_archive_card` archives into the board's hidden `archive` list and
     restores with `restoreToListId`. Verified by the card's column: `isClosed`
     does NOT change on archive, so it proves nothing.
-  - `planka_move_list_cards` empties one column into another through Planka's
-    own bulk endpoint, counting both columns before and after.
+  - `planka_move_list_cards` empties one column into another, counting both
+    columns before and after. It uses Planka's bulk endpoint only for the case
+    that endpoint accepts (a closed column into the archive) and moves card by
+    card otherwise, preserving each card's position; `strategy` reports which.
 - `src/operations/card-brief.ts`: a permissive card read used for verification.
   An archived card comes back with `position: null`, which the strict card
   schema rejects — the archive tool could not have verified its own write
@@ -209,6 +211,12 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `planka_move_list_cards` answered 403 "Not enough rights" on any ordinary
+  column-to-column move. `POST /api/lists/:id/move-cards` is not the general
+  bulk move its name suggests: Planka 2.2.1 refuses anything but a `closed`
+  source into an `archive` destination, and the refusal reads like a permission
+  problem. The tool now falls back to one PATCH per card, keeps each card's
+  position, and reports which path it took plus any card that refused to move.
 - Restoring a card out of the archive sent only `listId`, and Planka answered
   *"Position must be present"* — an archived card has `position: null`. The
   restore path now always sends a position. Caught against a real Planka 2.2.1,
