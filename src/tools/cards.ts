@@ -1,9 +1,13 @@
 /**
  * Card tools for PLANKA MCP server.
+ *
+ * Every write here re-reads the card and reports what LANDED — never what was
+ * asked for. See src/operations/verify.ts.
  */
 import {
   createCard,
   getCard,
+  getCardLight,
   updateCard,
   moveCard,
   deleteCard,
@@ -11,7 +15,25 @@ import {
 import { UpdateCardParamsInput } from "../schemas/requests.js";
 import { createTasks } from "../operations/tasks.js";
 import { addLabelToCard } from "../operations/labels.js";
+import {
+  goneOn404,
+  nothingToDo,
+  verifiedDelete,
+  verifiedWrite,
+  writeResult,
+} from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
+
+/** Two date values are the same instant (or both empty). */
+function sameDate(a: string | null | undefined, b: string | null | undefined) {
+  const na = a ?? null;
+  const nb = b ?? null;
+  if (na === nb) return true;
+  if (na === null || nb === null) return false;
+  const ta = Date.parse(na);
+  const tb = Date.parse(nb);
+  return Number.isNaN(ta) || Number.isNaN(tb) ? na === nb : ta === tb;
+}
 
 /**
  * Tool: planka_create_card
@@ -20,7 +42,8 @@ import { PlankaError } from "../errors.js";
 export const createCardTool = {
   name: "planka_create_card",
   description:
-    "Create a new card on a board. Optionally add tasks (checklist items) at the same time.",
+    "Create a card, optionally with tasks (checklist items) and labels. " +
+    "Reports the tasks and labels that actually landed, and always returns the card id — never retry blindly on a partial failure.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -62,58 +85,109 @@ export const createCardTool = {
     labelIds?: string[];
   }) => {
     try {
-      // Create the card
-      const card = await createCard({
-        listId: params.listId,
-        name: params.name,
-        description: params.description,
-        dueDate: params.dueDate,
+      const requestedTasks = params.tasks ?? [];
+      const requestedLabels = params.labelIds ?? [];
+
+      // 1. Create the card and prove it exists.
+      const created = await verifiedWrite({
+        write: () =>
+          createCard({
+            listId: params.listId,
+            name: params.name,
+            description: params.description,
+            dueDate: params.dueDate,
+          }),
+        reread: (card) => getCardLight({ cardId: card.id }),
+        landed: (after, card) => after.card.id === card.id,
       });
+      const card = created.result;
 
-      // Add tasks if provided
-      if (params.tasks && params.tasks.length > 0) {
-        await createTasks({
-          cardId: card.id,
-          tasks: params.tasks.map((name) => ({ name })),
-        });
-      }
+      const partialFailure: Record<string, unknown> = {};
 
-      // Add labels if provided
-      let labelsAttached = 0;
-      const labelErrors: string[] = [];
-      if (params.labelIds && params.labelIds.length > 0) {
-        for (const labelId of params.labelIds) {
-          try {
-            await addLabelToCard({ cardId: card.id, labelId });
-            labelsAttached++;
-          } catch (error) {
-            // Track failed labels but continue
-            labelErrors.push(labelId);
-          }
+      // 2. Tasks. A failure here must never cost the caller the card id.
+      if (requestedTasks.length > 0) {
+        try {
+          await createTasks({
+            cardId: card.id,
+            tasks: requestedTasks.map((name) => ({ name })),
+          });
+        } catch (error) {
+          partialFailure.tasks =
+            error instanceof Error ? error.message : String(error);
         }
       }
 
+      // 3. Labels, one by one: a bad labelId is a 404 that must not sink the rest.
+      const labelErrors: string[] = [];
+      for (const labelId of requestedLabels) {
+        try {
+          await addLabelToCard({ cardId: card.id, labelId });
+        } catch {
+          labelErrors.push(labelId);
+        }
+      }
+
+      // 4. Read the card once more and report REALITY.
+      let after = created.after;
+      let readError = created.verificationError;
+      if (requestedTasks.length > 0 || requestedLabels.length > 0) {
+        try {
+          after = await getCardLight({ cardId: card.id });
+          readError = undefined;
+        } catch (error) {
+          readError = `the card was created but could not be re-read: ${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      }
+
+      const tasksOnCard = after
+        ? requestedTasks.filter((name) =>
+            after!.tasks.some((t) => t.name === name)
+          ).length
+        : 0;
+      const finalLabelIds = after
+        ? after.cardLabels.map((cl) => cl.labelId)
+        : [];
+      const labelsAttached = after
+        ? requestedLabels.filter((id) => finalLabelIds.includes(id)).length
+        : 0;
+
+      if (labelErrors.length > 0) partialFailure.labelIds = labelErrors;
+      if (after && tasksOnCard < requestedTasks.length) {
+        partialFailure.tasksMissing = requestedTasks.filter(
+          (name) => !after!.tasks.some((t) => t.name === name)
+        );
+      }
+
+      const allLabelsFailed =
+        requestedLabels.length > 0 && labelsAttached === 0;
+      const ok =
+        created.verified &&
+        !readError &&
+        Object.keys(partialFailure).length === 0 &&
+        !allLabelsFailed;
+
+      const body = {
+        success: ok,
+        verified: created.verified && !readError,
+        ...(readError ? { verificationError: readError } : {}),
+        card: {
+          id: card.id,
+          name: after?.card.name ?? card.name,
+          listId: after?.card.listId ?? card.listId,
+        },
+        tasksRequested: requestedTasks.length,
+        tasksCreated: tasksOnCard,
+        labelsRequested: requestedLabels.length,
+        labelsAttached,
+        ...(after ? { finalLabelIds } : {}),
+        ...(Object.keys(partialFailure).length > 0 ? { partialFailure } : {}),
+      };
+
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                card: {
-                  id: card.id,
-                  name: card.name,
-                  listId: card.listId,
-                },
-                tasksCreated: params.tasks?.length || 0,
-                labelsAttached,
-                ...(labelErrors.length > 0 && { labelErrors }),
-              },
-              null,
-              2
-            ),
-          },
-        ],
+        content: [{ type: "text" as const, text: JSON.stringify(body) }],
+        ...(ok ? {} : { isError: true as const }),
       };
     } catch (error) {
       if (error instanceof PlankaError) {
@@ -189,7 +263,7 @@ export const getCardTool = {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(formatted, null, 2),
+            text: JSON.stringify(formatted),
           },
         ],
       };
@@ -212,7 +286,7 @@ export const getCardTool = {
 export const updateCardTool = {
   name: "planka_update_card",
   description:
-    "Update a card's properties (name, description, due date, completion status).",
+    "Update a card (name, description, due date, completion). Reports which fields actually landed.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -258,29 +332,56 @@ export const updateCardTool = {
       if (updates.isCompleted !== undefined)
         patch.isCompleted = updates.isCompleted;
 
-      const card = await updateCard(patch);
+      if (Object.keys(patch).length === 1) {
+        return nothingToDo("name, description, dueDate, isCompleted");
+      }
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                card: {
-                  id: card.id,
-                  name: card.name,
-                  description: card.description,
-                  dueDate: card.dueDate,
-                  isCompleted: card.isCompleted,
-                },
-              },
-              null,
-              2
-            ),
-          },
-        ],
+      const mismatches = (after: { card: Record<string, unknown> }) => {
+        const bad: string[] = [];
+        const c = after.card as {
+          name?: string;
+          description?: string | null;
+          dueDate?: string | null;
+          isCompleted?: boolean;
+        };
+        if (patch.name !== undefined && c.name !== patch.name) bad.push("name");
+        if (
+          patch.description !== undefined &&
+          (c.description ?? null) !== (patch.description ?? null)
+        )
+          bad.push("description");
+        if (patch.dueDate !== undefined && !sameDate(c.dueDate, patch.dueDate))
+          bad.push("dueDate");
+        if (
+          patch.isCompleted !== undefined &&
+          c.isCompleted !== patch.isCompleted
+        )
+          bad.push("isCompleted");
+        return bad;
       };
+
+      const written = await verifiedWrite({
+        write: () => updateCard(patch),
+        reread: () => getCardLight({ cardId }),
+        landed: (after) => mismatches(after).length === 0,
+      });
+
+      const after = written.after;
+      const notLanded = after ? mismatches(after) : [];
+
+      return writeResult(
+        {
+          card: {
+            id: written.result.id,
+            name: after?.card.name ?? written.result.name,
+            description: after?.card.description ?? written.result.description,
+            dueDate: after?.card.dueDate ?? written.result.dueDate,
+            isCompleted: after?.card.isCompleted ?? written.result.isCompleted,
+          },
+          ...(notLanded.length > 0 ? { notLanded } : {}),
+        },
+        written
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {
@@ -300,7 +401,7 @@ export const updateCardTool = {
 export const moveCardTool = {
   name: "planka_move_card",
   description:
-    "Move a card to a different list or position. Use this for workflow transitions (e.g., 'To Do' -> 'In Progress').",
+    "Move a card to another list (or board) or position — workflow transitions. Fails loudly if the card did not end up where you asked.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -311,6 +412,11 @@ export const moveCardTool = {
       listId: {
         type: "string",
         description: "Target list ID",
+      },
+      boardId: {
+        type: "string",
+        description:
+          "Target board ID — only when moving across boards (listId must belong to it)",
       },
       position: {
         type: "number",
@@ -323,34 +429,47 @@ export const moveCardTool = {
   handler: async (params: {
     cardId: string;
     listId: string;
+    boardId?: string;
     position?: number;
   }) => {
     try {
-      const card = await moveCard({
-        cardId: params.cardId,
-        listId: params.listId,
-        position: params.position ?? 65536,
+      const written = await verifiedWrite({
+        write: () =>
+          moveCard({
+            cardId: params.cardId,
+            listId: params.listId,
+            boardId: params.boardId,
+            position: params.position ?? 65536,
+          }),
+        reread: () => getCardLight({ cardId: params.cardId }),
+        landed: (after) =>
+          after.card.listId === params.listId &&
+          (params.boardId ? after.card.boardId === params.boardId : true),
       });
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                card: {
-                  id: card.id,
-                  name: card.name,
-                  listId: card.listId,
-                },
-              },
-              null,
-              2
-            ),
+      const after = written.after;
+
+      return writeResult(
+        {
+          card: {
+            id: written.result.id,
+            name: after?.card.name ?? written.result.name,
+            listId: after?.card.listId ?? written.result.listId,
+            boardId: after?.card.boardId ?? written.result.boardId,
           },
-        ],
-      };
+          requestedListId: params.listId,
+          ...(params.boardId ? { requestedBoardId: params.boardId } : {}),
+          ...(after && after.card.listId !== params.listId
+            ? {
+                notLanded:
+                  "the card is still in list " +
+                  after.card.listId +
+                  " — check that the listId belongs to the card's board",
+              }
+            : {}),
+        },
+        written
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {
@@ -369,7 +488,8 @@ export const moveCardTool = {
  */
 export const deleteCardTool = {
   name: "planka_delete_card",
-  description: "Permanently delete a card. This cannot be undone.",
+  description:
+    "Permanently delete a card with its tasks, comments and attachments. Cannot be undone; confirmed by re-reading.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -382,23 +502,21 @@ export const deleteCardTool = {
   },
   handler: async (params: { cardId: string }) => {
     try {
-      await deleteCard({ cardId: params.cardId });
+      const deleted = await verifiedDelete({
+        del: () => deleteCard({ cardId: params.cardId }),
+        confirmGone: () =>
+          goneOn404(() => getCardLight({ cardId: params.cardId })),
+      });
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                message: `Card ${params.cardId} deleted`,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
+      return writeResult(
+        {
+          cardId: params.cardId,
+          message: deleted.verified
+            ? `Card ${params.cardId} deleted`
+            : `Card ${params.cardId} still answers a read after the delete`,
+        },
+        deleted
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {

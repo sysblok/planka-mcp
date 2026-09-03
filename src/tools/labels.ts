@@ -7,12 +7,26 @@ import {
   deleteLabel,
   setCardLabels,
 } from "../operations/labels.js";
+import { getBoard } from "../operations/boards.js";
 import { LabelColorSchema } from "../schemas/entities.js";
 import { UpdateLabelParamsInput } from "../schemas/requests.js";
+import {
+  nothingToDo,
+  verifiedDelete,
+  verifiedWrite,
+  writeResult,
+} from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
 
-// Valid colors for the schema description
-const validColors = LabelColorSchema.options.join(", ");
+/**
+ * The 43 Planka colors as a real JSON Schema enum instead of a sentence in the
+ * description. Measured: the enum costs 599 chars against the 580 of the prose
+ * it replaces — so this is NOT a token saving, it is a correctness one: the
+ * client now rejects a bad color before the call is made. The prose stays for
+ * the runtime error message only.
+ */
+const LABEL_COLORS = LabelColorSchema.options as readonly string[];
+const validColors = LABEL_COLORS.join(", ");
 
 /**
  * Tool: planka_manage_labels
@@ -20,7 +34,8 @@ const validColors = LabelColorSchema.options.join(", ");
  */
 export const manageLabelsTool = {
   name: "planka_manage_labels",
-  description: "Create, update, or delete labels on a board.",
+  description:
+    "Create, update, or delete labels on a board. Verified against the board's labels.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,7 +58,8 @@ export const manageLabelsTool = {
       },
       color: {
         type: "string",
-        description: `Label color. Valid colors: ${validColors}`,
+        enum: LABEL_COLORS,
+        description: "Label color (required for create)",
       },
     },
     required: ["action"],
@@ -106,31 +122,35 @@ export const manageLabelsTool = {
             };
           }
 
-          const label = await createLabel({
-            boardId: params.boardId,
-            name: params.name,
-            color: colorParse.data,
+          const written = await verifiedWrite({
+            write: () =>
+              createLabel({
+                boardId: params.boardId!,
+                name: params.name!,
+                color: colorParse.data,
+              }),
+            reread: (label) => getBoard({ boardId: label.boardId }),
+            landed: (board, label) =>
+              board.labels.some(
+                (l) =>
+                  l.id === label.id &&
+                  l.name === params.name &&
+                  l.color === colorParse.data
+              ),
           });
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    label: {
-                      id: label.id,
-                      name: label.name,
-                      color: label.color,
-                    },
-                  },
-                  null,
-                  2
-                ),
+          return writeResult(
+            {
+              label: {
+                id: written.result.id,
+                name: written.result.name,
+                color: written.result.color,
+                boardId: written.result.boardId,
+                position: written.result.position,
               },
-            ],
-          };
+            },
+            written
+          );
         }
 
         case "update": {
@@ -164,27 +184,39 @@ export const manageLabelsTool = {
             updates.color = colorParse.data;
           }
 
-          const label = await updateLabel(updates);
+          if (Object.keys(updates).length === 1) {
+            return nothingToDo("name, color");
+          }
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    label: {
-                      id: label.id,
-                      name: label.name,
-                      color: label.color,
-                    },
-                  },
-                  null,
-                  2
-                ),
+          const written = await verifiedWrite({
+            write: () => updateLabel(updates),
+            reread: (label) => getBoard({ boardId: label.boardId }),
+            landed: (board) => {
+              const label = board.labels.find((l) => l.id === params.labelId);
+              if (!label) return false;
+              if (updates.name !== undefined && label.name !== updates.name)
+                return false;
+              if (updates.color !== undefined && label.color !== updates.color)
+                return false;
+              return true;
+            },
+          });
+
+          const onBoard = written.after?.labels.find(
+            (l) => l.id === params.labelId
+          );
+
+          return writeResult(
+            {
+              label: {
+                id: written.result.id,
+                name: onBoard?.name ?? written.result.name,
+                color: onBoard?.color ?? written.result.color,
+                boardId: written.result.boardId,
               },
-            ],
-          };
+            },
+            written
+          );
         }
 
         case "delete": {
@@ -200,23 +232,27 @@ export const manageLabelsTool = {
             };
           }
 
-          await deleteLabel({ labelId: params.labelId });
+          const deleted = await verifiedDelete({
+            del: () => deleteLabel({ labelId: params.labelId! }),
+            confirmGone: async (label) => {
+              if (!label) return null;
+              const board = await getBoard({ boardId: label.boardId });
+              return !board.labels.some((l) => l.id === params.labelId);
+            },
+            unknownReason:
+              "Planka did not echo the deleted label, so its board is unknown and the delete could not be confirmed",
+          });
 
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    message: `Label ${params.labelId} deleted`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          return writeResult(
+            {
+              labelId: params.labelId,
+              ...(deleted.result ? { boardId: deleted.result.boardId } : {}),
+              message: deleted.verified
+                ? `Label ${params.labelId} deleted`
+                : `Label ${params.labelId} delete not confirmed`,
+            },
+            deleted
+          );
         }
 
         default:
@@ -249,7 +285,7 @@ export const manageLabelsTool = {
 export const setCardLabelsTool = {
   name: "planka_set_card_labels",
   description:
-    "Add or remove labels from a card. Pass label IDs from the board (planka_get_board lists them), not label names. " +
+    "Add or remove labels from a card. Pass label IDs from the board (planka_board_summary lists them), not label names. " +
     "Reports what actually landed on the card, verified by re-reading it.",
   inputSchema: {
     type: "object" as const,
@@ -299,7 +335,7 @@ export const setCardLabelsTool = {
               type: "text" as const,
               text:
                 "Error: nothing to do — pass addLabelIds (or labelIds) and/or removeLabelIds. " +
-                "Label IDs come from planka_get_board.",
+                "Label IDs come from planka_board_summary.",
             },
           ],
           isError: true,
@@ -317,22 +353,19 @@ export const setCardLabelsTool = {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: ok,
-                cardId: params.cardId,
-                labelsAdded: result.added.length,
-                labelsRemoved: result.removed.length,
-                added: result.added,
-                removed: result.removed,
-                alreadyPresent: result.alreadyPresent,
-                notPresent: result.notPresent,
-                failed: result.failed,
-                finalLabelIds: result.finalLabelIds,
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({
+              success: ok,
+              verified: true,
+              cardId: params.cardId,
+              labelsAdded: result.added.length,
+              labelsRemoved: result.removed.length,
+              added: result.added,
+              removed: result.removed,
+              alreadyPresent: result.alreadyPresent,
+              notPresent: result.notPresent,
+              failed: result.failed,
+              finalLabelIds: result.finalLabelIds,
+            }),
           },
         ],
         ...(ok ? {} : { isError: true as const }),

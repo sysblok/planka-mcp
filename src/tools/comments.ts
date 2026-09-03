@@ -7,6 +7,11 @@ import {
   updateComment,
   deleteComment,
 } from "../operations/comments.js";
+import {
+  verifiedDelete,
+  verifiedWrite,
+  writeResult,
+} from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
 
 /**
@@ -16,7 +21,7 @@ import { PlankaError } from "../errors.js";
 export const addCommentTool = {
   name: "planka_add_comment",
   description:
-    "Add a comment to a card. Use this for status updates, notes, or agent activity logs.",
+    "Add a comment to a card (status updates, notes, agent logs). Verified by re-reading the card's comments.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -33,30 +38,25 @@ export const addCommentTool = {
   },
   handler: async (params: { cardId: string; text: string }) => {
     try {
-      const comment = await createComment({
-        cardId: params.cardId,
-        text: params.text,
+      const written = await verifiedWrite({
+        write: () =>
+          createComment({ cardId: params.cardId, text: params.text }),
+        reread: () => getCommentsForCard({ cardId: params.cardId }),
+        landed: (comments, comment) =>
+          comments.some((c) => c.id === comment.id && c.text === params.text),
       });
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                success: true,
-                comment: {
-                  id: comment.id,
-                  text: comment.text,
-                  createdAt: comment.createdAt,
-                },
-              },
-              null,
-              2
-            ),
+      return writeResult(
+        {
+          cardId: params.cardId,
+          comment: {
+            id: written.result.id,
+            text: written.result.text,
+            createdAt: written.result.createdAt,
           },
-        ],
-      };
+        },
+        written
+      );
     } catch (error) {
       if (error instanceof PlankaError) {
         return {
@@ -94,20 +94,16 @@ export const getCommentsTool = {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              {
-                cardId: params.cardId,
-                commentCount: comments.length,
-                comments: comments.map((c) => ({
-                  id: c.id,
-                  text: c.text,
-                  author: c.authorName,
-                  createdAt: c.createdAt,
-                })),
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify({
+              cardId: params.cardId,
+              commentCount: comments.length,
+              comments: comments.map((c) => ({
+                id: c.id,
+                text: c.text,
+                author: c.authorName,
+                createdAt: c.createdAt,
+              })),
+            }),
           },
         ],
       };
@@ -130,7 +126,7 @@ export const getCommentsTool = {
 export const manageCommentTool = {
   name: "planka_manage_comment",
   description:
-    "Update or delete an existing comment (get IDs from planka_get_comments). Only comments created by the agent user can be modified.",
+    "Update or delete a comment (IDs from planka_get_comments). Only the agent user's own comments can be modified. Verified by re-reading.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -169,47 +165,56 @@ export const manageCommentTool = {
               isError: true,
             };
           }
-          const comment = await updateComment({
-            commentId: params.commentId,
-            text: params.text,
+
+          const written = await verifiedWrite({
+            write: () =>
+              updateComment({
+                commentId: params.commentId,
+                text: params.text!,
+              }),
+            reread: (comment) => getCommentsForCard({ cardId: comment.cardId }),
+            landed: (comments) =>
+              comments.some(
+                (c) => c.id === params.commentId && c.text === params.text
+              ),
           });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    comment: {
-                      id: comment.id,
-                      text: comment.text,
-                      updatedAt: comment.updatedAt,
-                    },
-                  },
-                  null,
-                  2
-                ),
+
+          return writeResult(
+            {
+              cardId: written.result.cardId,
+              comment: {
+                id: written.result.id,
+                text: written.result.text,
+                updatedAt: written.result.updatedAt,
               },
-            ],
-          };
+            },
+            written
+          );
         }
         case "delete": {
-          await deleteComment({ commentId: params.commentId });
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    message: `Comment ${params.commentId} deleted`,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const deleted = await verifiedDelete({
+            del: () => deleteComment({ commentId: params.commentId }),
+            confirmGone: async (comment) => {
+              if (!comment) return null;
+              const after = await getCommentsForCard({
+                cardId: comment.cardId,
+              });
+              return !after.some((c) => c.id === params.commentId);
+            },
+            unknownReason:
+              "Planka did not echo the deleted comment, so its card is unknown and the delete could not be confirmed",
+          });
+
+          return writeResult(
+            {
+              commentId: params.commentId,
+              ...(deleted.result ? { cardId: deleted.result.cardId } : {}),
+              message: deleted.verified
+                ? `Comment ${params.commentId} deleted`
+                : `Comment ${params.commentId} delete not confirmed`,
+            },
+            deleted
+          );
         }
         default:
           return {

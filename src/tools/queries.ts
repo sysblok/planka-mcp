@@ -18,7 +18,7 @@ import { PlankaError } from "../errors.js";
 function jsonResult(payload: unknown) {
   return {
     content: [
-      { type: "text" as const, text: JSON.stringify(payload, null, 2) },
+      { type: "text" as const, text: JSON.stringify(payload) },
     ],
   };
 }
