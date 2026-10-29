@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0-sysblok.1] - sysblok fork
+
+Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.1`; based on 0.3.0.
+
+### Fixed
+
+- Board reads no longer fail on data migrated from other trackers: cards with
+  `creatorUserId: null` and users with `username: null` are accepted.
+- `planka_get_card` with `detail: "full"` names custom fields that belong to a
+  board-level group instead of returning `name: null`.
+
+### Added
+
+- Dockerfile and a GitHub Actions release that publishes a multi-arch image to
+  GHCR on `v*-sysblok.*` tags; CI runs tests and an image smoke test on PRs.
+
 ## [0.3.0] - 2026-09-03
 
 ### Highlights

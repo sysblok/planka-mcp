@@ -6,6 +6,39 @@ An optional workflow turns that board into durable memory for agent work.
 
 [Leer en español](README.es.md)
 
+> [!NOTE]
+> **This is the sysblok fork** of [omnicoreos/planka-mcp](https://github.com/omnicoreos/planka-mcp).
+> It adds fixes for boards migrated from other trackers (see [CHANGELOG](CHANGELOG.md))
+> and is distributed as a Docker image, not on npm. The `npx @omnicoreos/planka-mcp`
+> commands below install the unpatched upstream package.
+>
+> ```json
+> {
+>   "mcpServers": {
+>     "planka": {
+>       "command": "docker",
+>       "args": ["run", "-i", "--rm",
+>                "-e", "PLANKA_BASE_URL", "-e", "PLANKA_API_KEY",
+>                "-e", "PLANKA_DEFAULT_BOARD_ID",
+>                "ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.1"],
+>       "env": {
+>         "PLANKA_BASE_URL": "https://board.example.com",
+>         "PLANKA_API_KEY": "<prefix>_<secret>",
+>         "PLANKA_DEFAULT_BOARD_ID": "<board id>"
+>       }
+>     }
+>   }
+> }
+> ```
+>
+> Every environment variable in [Scoping the server](#scoping-the-server) works the
+> same way: add it to `env` and pass it through with another `-e NAME`.
+>
+> **Releasing:** push a tag `v<package.json version>-sysblok.<N>` (e.g.
+> `v0.3.0-sysblok.1`). The `Release image` workflow tests, builds
+> `linux/amd64` + `linux/arm64`, pushes `ghcr.io/sysblok/planka-mcp:<tag>` and
+> `:latest`, and creates a GitHub release. Pin the exact tag in clients.
+
 ```text
 You talk to Claude Code
           │
