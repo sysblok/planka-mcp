@@ -105,12 +105,17 @@ export async function getCardLight(input: CardIdInput): Promise<CardLightDetails
  * the board show. So one board GET resolves both, and its result is cached for
  * a minute because names change far more slowly than cards do.
  *
+ * The same holds for custom fields of a BOARD-level group: the card show
+ * carries their values but not their definitions, which only the board show
+ * includes. Card-level groups still come with the card itself.
+ *
  * Every failure is swallowed: this decorates a read, it never fails one, and
  * NOTHING is ever verified against this cache.
  */
 export interface BoardNames {
   lists: Map<string, string | null>;
   labels: Map<string, string | null>;
+  customFields: Map<string, string | null>;
 }
 
 const BOARD_NAMES_TTL_MS = 60_000;
@@ -149,6 +154,7 @@ export async function getBoardNames(
     const names: BoardNames = {
       lists: nameIndex(included?.lists),
       labels: nameIndex(included?.labels),
+      customFields: nameIndex(included?.customFields),
     };
     boardNamesCache.set(boardId, { at: Date.now(), names });
     return names;

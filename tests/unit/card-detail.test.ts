@@ -208,6 +208,45 @@ describe("get_card full detail", () => {
   });
 });
 
+describe("get_card board-level custom fields", () => {
+  it("names a value whose field is defined on the board, not the card", async () => {
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === "/api/cards/card-1") {
+        return {
+          item: card,
+          included: {
+            ...included,
+            customFields: [],
+            customFieldValues: [
+              { id: "cfv-2", cardId: "card-1", customFieldGroupId: "cfg-board", customFieldId: "cf-board", content: "https://docs.google.com/document/d/x" },
+              { id: "cfv-3", cardId: "card-1", customFieldGroupId: "cfg-board", customFieldId: "cf-gone", content: "orphan" },
+            ],
+          },
+        };
+      }
+      if (path === "/api/boards/board-1") {
+        return {
+          ...boardBody,
+          included: {
+            ...boardBody.included,
+            customFields: [{ id: "cf-board", customFieldGroupId: "cfg-board", name: "Google Doc", position: 1, ...ts }],
+          },
+        };
+      }
+      throw new Error(`unexpected GET ${path}`);
+    });
+
+    const body = payload(
+      await getCardTool.handler({ cardId: "card-1", detail: "full" })
+    );
+
+    expect(body.customFields).toEqual([
+      { name: "Google Doc", content: "https://docs.google.com/document/d/x" },
+      { name: null, content: "orphan" },
+    ]);
+  });
+});
+
 describe("get_card withComments", () => {
   it("returns the N most recent, oldest first", async () => {
     routeGet(() => commentsBody(3, 3));
