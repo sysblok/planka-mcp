@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CardSchema,
   LabelColorSchema,
   LabelSchema,
   ListSchema,
+  UserSchema,
 } from "../../src/schemas/entities.js";
 import {
   CreateCardSchema,
@@ -67,5 +69,26 @@ describe("Planka 2.x schemas", () => {
         }).type
       ).toBe(type);
     }
+  });
+
+  it("accepts imported rows with no creator or username", () => {
+    // Cards and users migrated from other trackers come back with these
+    // fields set to null, not omitted.
+    expect(
+      CardSchema.parse({
+        id: "card-1",
+        boardId: "board-1",
+        listId: "list-1",
+        creatorUserId: null,
+        name: "Imported",
+        position: 65536,
+        type: "project",
+        ...timestamps,
+      }).creatorUserId
+    ).toBeNull();
+    expect(
+      UserSchema.parse({ id: "user-1", username: null, name: "Imported", ...timestamps })
+        .username
+    ).toBeNull();
   });
 });

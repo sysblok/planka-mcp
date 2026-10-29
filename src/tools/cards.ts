@@ -319,11 +319,19 @@ function tasksOf(details: CardLightDetails, withItems: boolean) {
   };
 }
 
-/** Custom field values resolved to their field name (full detail only). */
-function customFieldsOf(details: CardLightDetails) {
+/**
+ * Custom field values resolved to their field name (full detail only).
+ * Card-level fields come with the card; board-level ones only with the board.
+ */
+function customFieldsOf(
+  details: CardLightDetails,
+  boardFieldNames?: Map<string, string | null>
+) {
   return details.customFieldValues.map((v) => ({
     name:
-      details.customFields.find((f) => f.id === v.customFieldId)?.name ?? null,
+      details.customFields.find((f) => f.id === v.customFieldId)?.name ??
+      boardFieldNames?.get(v.customFieldId) ??
+      null,
     content: v.content ?? null,
   }));
 }
@@ -464,7 +472,7 @@ export const getCardTool = {
           mimeType: a.data?.mimeType ?? null,
           sizeBytes: a.data?.size ?? null,
         }));
-        body.customFields = customFieldsOf(details);
+        body.customFields = customFieldsOf(details, names?.customFields);
       }
 
       if (comments) {

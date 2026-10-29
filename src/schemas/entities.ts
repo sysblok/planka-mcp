@@ -63,7 +63,7 @@ export type LabelColor = z.infer<typeof LabelColorSchema>;
 export const UserSchema = z.object({
   id: z.string(),
   email: z.string().email().optional(),
-  username: z.string().optional(),
+  username: z.string().nullish(),
   name: z.string(),
   avatarUrl: z.string().nullable().optional(),
   createdAt: z.string(),
@@ -112,7 +112,7 @@ export const CardSchema = z.object({
   id: z.string(),
   boardId: z.string(),
   listId: z.string(),
-  creatorUserId: z.string().optional(),
+  creatorUserId: z.string().nullish(),
   name: z.string(),
   description: z.string().nullable().optional(),
   position: z.number(),
@@ -256,7 +256,7 @@ export type Comment = z.infer<typeof CommentSchema>;
 export const AttachmentSchema = z.object({
   id: z.string(),
   cardId: z.string(),
-  creatorUserId: z.string().optional(),
+  creatorUserId: z.string().nullish(),
   name: z.string(),
   type: z.string().optional(), // "file" | "link" in 2.0
   data: z
