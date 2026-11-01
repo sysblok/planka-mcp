@@ -2,6 +2,7 @@
  * Card operations for PLANKA API.
  */
 import { plankaClient } from "../client.js";
+import { cacheScope } from "../request-context.js";
 import { parseInput } from "../errors.js";
 import { assertListWritable, assertBoardAllowed } from "../config/policy.js";
 import {
@@ -119,11 +120,44 @@ export interface BoardNames {
 }
 
 const BOARD_NAMES_TTL_MS = 60_000;
+/**
+ * Keyed by `<caller>:<boardId>`, where the caller is the SHA-256 fingerprint
+ * of the request's API key in HTTP mode (never the raw key) and one shared
+ * slot in stdio mode. Two users of the same board must not share an entry:
+ * one of them may not be allowed to read it at all.
+ */
 const boardNamesCache = new Map<string, { at: number; names: BoardNames }>();
+/** Many users × many boards in a long-lived HTTP process: bound the map. */
+const BOARD_NAMES_MAX_ENTRIES = 1000;
+
+function boardNamesKey(boardId: string): string {
+  return `${cacheScope()}:${boardId}`;
+}
+
+function rememberBoardNames(key: string, names: BoardNames): void {
+  const now = Date.now();
+  if (boardNamesCache.size >= BOARD_NAMES_MAX_ENTRIES) {
+    for (const [k, entry] of boardNamesCache) {
+      if (now - entry.at >= BOARD_NAMES_TTL_MS) boardNamesCache.delete(k);
+    }
+  }
+  // Still full: drop the oldest insertion (Map iterates in insertion order).
+  if (boardNamesCache.size >= BOARD_NAMES_MAX_ENTRIES) {
+    const oldest = boardNamesCache.keys().next().value;
+    if (oldest !== undefined) boardNamesCache.delete(oldest);
+  }
+  boardNamesCache.delete(key);
+  boardNamesCache.set(key, { at: now, names });
+}
 
 /** Test seam: drops the memoized board names. */
 export function clearBoardNamesCache(): void {
   boardNamesCache.clear();
+}
+
+/** Test seam: the cache keys, to prove no raw API key is ever one of them. */
+export function boardNamesCacheKeys(): string[] {
+  return [...boardNamesCache.keys()];
 }
 
 /** {id -> name} out of a raw `included` array, without validating the rest. */
@@ -142,7 +176,8 @@ function nameIndex(rows: unknown): Map<string, string | null> {
 export async function getBoardNames(
   boardId: string
 ): Promise<BoardNames | null> {
-  const cached = boardNamesCache.get(boardId);
+  const key = boardNamesKey(boardId);
+  const cached = boardNamesCache.get(key);
   if (cached && Date.now() - cached.at < BOARD_NAMES_TTL_MS) {
     return cached.names;
   }
@@ -156,7 +191,7 @@ export async function getBoardNames(
       labels: nameIndex(included?.labels),
       customFields: nameIndex(included?.customFields),
     };
-    boardNamesCache.set(boardId, { at: Date.now(), names });
+    rememberBoardNames(key, names);
     return names;
   } catch {
     return null;

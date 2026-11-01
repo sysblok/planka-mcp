@@ -47,7 +47,7 @@ jobs:
             type=raw,value=latest
           labels: |
             org.opencontainers.image.title=planka-mcp
-            org.opencontainers.image.description=Planka 2.x MCP server (stdio), sysblok fork of omnicoreos/planka-mcp
+            org.opencontainers.image.description=Planka 2.x MCP server (stdio or multi-user HTTP), sysblok fork of omnicoreos/planka-mcp
       - uses: docker/build-push-action@v6
         with:
           context: .

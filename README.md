@@ -8,8 +8,8 @@ An optional workflow turns that board into durable memory for agent work.
 
 > [!NOTE]
 > **This is the sysblok fork** of [omnicoreos/planka-mcp](https://github.com/omnicoreos/planka-mcp).
-> It adds fixes for boards migrated from other trackers (see [CHANGELOG](CHANGELOG.md))
-> and is distributed as a Docker image, not on npm. The `npx @omnicoreos/planka-mcp`
+> It adds fixes for boards migrated from other trackers, a multi-user HTTP mode
+> (see [CHANGELOG](CHANGELOG.md)) and is distributed as a Docker image, not on npm. The `npx @omnicoreos/planka-mcp`
 > commands below install the unpatched upstream package.
 >
 > ```json
@@ -20,7 +20,7 @@ An optional workflow turns that board into durable memory for agent work.
 >       "args": ["run", "-i", "--rm",
 >                "-e", "PLANKA_BASE_URL", "-e", "PLANKA_API_KEY",
 >                "-e", "PLANKA_DEFAULT_BOARD_ID",
->                "ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.1"],
+>                "ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.2"],
 >       "env": {
 >         "PLANKA_BASE_URL": "https://board.example.com",
 >         "PLANKA_API_KEY": "<prefix>_<secret>",
@@ -33,6 +33,9 @@ An optional workflow turns that board into durable memory for agent work.
 >
 > Every environment variable in [Scoping the server](#scoping-the-server) works the
 > same way: add it to `env` and pass it through with another `-e NAME`.
+>
+> The image also runs as a **multi-user HTTP server behind a gateway**: see
+> [Multi-user HTTP mode](#multi-user-http-mode-behind-a-gateway).
 >
 > **Releasing:** push a tag `v<package.json version>-sysblok.<N>` (e.g.
 > `v0.3.0-sysblok.1`). The `Release image` workflow tests, builds
@@ -234,6 +237,93 @@ see the boards you name — enforced by Planka itself, not by this server.
    ```
 
 Rotating a key is step 3 again: issuing a new one invalidates the old.
+
+## Multi-user HTTP mode (behind a gateway)
+
+> [!CAUTION]
+> HTTP mode has **no authentication of its own**. It forwards whatever key a
+> request carries to Planka. Run it only on a private network that nothing
+> but the gateway can reach. Never publish its port to the internet or to a
+> shared LAN.
+
+By default the server speaks stdio to one client as one Planka user. HTTP mode
+serves **many users from one process**. Each request carries its caller's own
+Planka API key, and everything that request does runs as that caller:
+
+- Every Planka call, every cache lookup, every tool result.
+- The key lives in `AsyncLocalStorage` for the request and nowhere else.
+- Caches are partitioned by a SHA-256 hash of the key, never by the raw key.
+- The key is scrubbed from error messages, tool results and logs.
+
+It is built for [LiteLLM](https://docs.litellm.ai/)'s MCP gateway with
+`auth_type: api_key`. LiteLLM stores each user's Planka API key and sends it
+as an `X-API-Key` header on every MCP request.
+
+**Threat model.** The server trusts the network, not the caller's identity.
+It assumes that anything that can reach it is the gateway, and that the
+gateway attaches only the authenticated user's own key. Planka then enforces
+that user's permissions. The server never holds a credential of its own, so a
+request without a key cannot fall back to one. A stolen key is exactly as
+powerful here as it is against Planka directly, and no more.
+
+| | |
+|---|---|
+| Enable | `MCP_TRANSPORT=http`, or pass `--http` |
+| Listens on | `HOST` (default `0.0.0.0`), `PORT` (default `3000`) |
+| `POST /mcp` | Streamable HTTP, stateless: a fresh server per request, no session ids, JSON responses |
+| `GET /healthz` | `200 {"status":"ok"}`, never touches Planka |
+| `GET`/`DELETE /mcp` | `405` (no SSE stream, no session to end) |
+| Anything else | `404` |
+| No `X-Api-Key` | `401` with a JSON-RPC error, before any tool runs |
+| Request body | 1 MB maximum (`413` above that) |
+| Required env | `PLANKA_BASE_URL` |
+| Refused env | `PLANKA_API_KEY`, `PLANKA_AGENT_EMAIL`, `PLANKA_AGENT_PASSWORD`: the server will not start with any of them set |
+
+The [scoping variables](#scoping-the-server) (`PLANKA_ALLOWED_BOARD_IDS`,
+`PLANKA_READ_ONLY`, `PLANKA_DEFAULT_BOARD_ID`, …) still work, and they apply
+to **every** user of the instance. Per-user restrictions belong in Planka
+memberships.
+
+Credentialed downloads only go to the `PLANKA_BASE_URL` origin. An
+attachment URL that points anywhere else is refused, so a card edited to link
+elsewhere cannot collect another user's key. This rule applies in stdio mode
+too.
+
+```bash
+# On the gateway's private Docker network. No -p: the port stays unpublished.
+docker network create mcp-private
+docker run -d --name planka-mcp --network mcp-private \
+  -e MCP_TRANSPORT=http \
+  -e PLANKA_BASE_URL=https://board.example.com \
+  ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.2
+```
+
+To try it locally, publish the port on loopback only:
+`docker run --rm -e MCP_TRANSPORT=http -e PLANKA_BASE_URL=... -p 127.0.0.1:3000:3000 ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.2`.
+The image's `HEALTHCHECK` probes `/healthz` in HTTP mode. In stdio mode it
+always reports healthy. stdio via `docker run -i` works exactly as before.
+
+On the LiteLLM side, the server entry points at the container over the
+private network. A sketch (check the field names against your LiteLLM
+version's MCP documentation, including how per-user keys are stored):
+
+```yaml
+mcp_servers:
+  planka:
+    url: "http://planka-mcp:3000/mcp"
+    transport: "http"
+    auth_type: "api_key"   # LiteLLM sends the user's key as X-API-Key
+```
+
+Check a deployment by hand, from inside the network:
+
+```bash
+curl -s http://planka-mcp:3000/healthz                    # 200
+curl -s -X POST http://planka-mcp:3000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'     # 401: no key
+```
 
 ## Scoping the server
 

@@ -46,3 +46,21 @@ jobs:
               -e PLANKA_API_KEY=ci_dummy \
               planka-mcp:ci > out.jsonl || true
           grep -q '"planka_get_structure"' out.jsonl || { cat out.jsonl; exit 1; }
+      - name: Smoke test — HTTP mode is healthy, refuses no-key requests
+        run: |
+          docker run -d --name http-smoke -e MCP_TRANSPORT=http \
+            -e PLANKA_BASE_URL=https://planka.invalid -p 127.0.0.1:3000:3000 planka-mcp:ci
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' http-smoke)" = healthy ] && break
+            sleep 1
+          done
+          docker inspect -f '{{.State.Health.Status}}' http-smoke | grep -qx healthy
+          init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          hdr=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${hdr[@]}" -d "$init" http://127.0.0.1:3000/mcp)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' "${hdr[@]}" -H 'X-Api-Key: ci_dummy_key' -d "$init" http://127.0.0.1:3000/mcp)" = 200
+          if docker run --rm -e MCP_TRANSPORT=http -e PLANKA_BASE_URL=https://planka.invalid \
+               -e PLANKA_API_KEY=shared planka-mcp:ci; then
+            echo "HTTP mode started with PLANKA_API_KEY set" >&2; exit 1
+          fi
+          docker rm -f http-smoke
