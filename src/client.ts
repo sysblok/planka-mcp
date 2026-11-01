@@ -3,11 +3,13 @@
  */
 import {
   PlankaAuthError,
+  PlankaError,
   PlankaConfigError,
   PlankaNetworkError,
   createPlankaError,
 } from "./errors.js";
 import { AuthResponse } from "./schemas/responses.js";
+import { getRequestContext, redactSecrets } from "./request-context.js";
 
 export interface ClientConfig {
   baseUrl: string;
@@ -124,6 +126,47 @@ export function getConfig(
   };
 }
 
+/** The credential variables HTTP mode refuses to start with. */
+export const ENV_CREDENTIAL_VARS = [
+  "PLANKA_API_KEY",
+  "PLANKA_AGENT_EMAIL",
+  "PLANKA_AGENT_PASSWORD",
+] as const;
+
+/**
+ * Configuration for the multi-user HTTP mode: a base URL and NO credential.
+ *
+ * Every request brings its caller's own key, so a key or a login in the
+ * environment could only ever act as a shared fallback — the one thing this
+ * mode must never have. Their presence is a deployment mistake, refused here.
+ */
+export function getHttpConfig(
+  env: NodeJS.ProcessEnv = process.env
+): ClientConfig {
+  const present = ENV_CREDENTIAL_VARS.filter(
+    (name) => (env[name] ?? "").trim() !== ""
+  );
+  if (present.length > 0) {
+    throw new PlankaConfigError(
+      `HTTP mode refuses to start with ${present.join(", ")} set. In HTTP mode every ` +
+        "request authenticates with its own X-Api-Key header; a credential in the " +
+        "environment would be a shared fallback for every caller. Unset it."
+    );
+  }
+  const baseUrl = env.PLANKA_BASE_URL;
+  if (!baseUrl) {
+    throw new PlankaConfigError(
+      "Missing required environment variables: PLANKA_BASE_URL"
+    );
+  }
+  try {
+    new URL(baseUrl);
+  } catch {
+    throw new PlankaConfigError(`Invalid PLANKA_BASE_URL: ${baseUrl}`);
+  }
+  return { baseUrl: baseUrl.replace(/\/+$/, "") };
+}
+
 /**
  * PLANKA API client with automatic JWT token management.
  */
@@ -131,20 +174,80 @@ export class PlankaClient {
   private config: ClientConfig | null = null;
   private token: string | null = null;
   private tokenExpiresAt: number = 0;
+  /**
+   * HTTP mode: the key comes from the current request and ONLY from there.
+   * There is no environment credential and no token to fall back on.
+   */
+  private requestScoped = false;
 
   constructor(
     private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly fetchImpl: typeof fetch = fetch
+    // Resolved per call, not captured at construction, so the global fetch can
+    // be swapped (tests) after this module has been imported.
+    private readonly fetchImpl: typeof fetch = (input, init) =>
+      globalThis.fetch(input, init)
   ) {}
+
+  /**
+   * Switches this client to multi-user HTTP mode. Validates the environment
+   * immediately (throws PlankaConfigError when a credential is set) so a bad
+   * deployment fails at startup, not on the first request.
+   */
+  useRequestScopedKeys(): void {
+    this.config = getHttpConfig(this.env);
+    this.requestScoped = true;
+    this.token = null;
+    this.tokenExpiresAt = 0;
+  }
 
   /**
    * Gets or initializes the configuration.
    */
   private getConfig(): ClientConfig {
     if (!this.config) {
-      this.config = getConfig(this.env);
+      this.config = this.requestScoped
+        ? getHttpConfig(this.env)
+        : getConfig(this.env);
     }
     return this.config;
+  }
+
+  /**
+   * Every credential this client might send right now. Anything leaving the
+   * server (error text, tool results, logs) is scrubbed of these.
+   */
+  secrets(): string[] {
+    const out: string[] = [];
+    const ctx = getRequestContext();
+    if (ctx) out.push(ctx.apiKey);
+    if (!this.requestScoped) {
+      try {
+        const config = this.getConfig();
+        if (config.apiKey) out.push(config.apiKey);
+        if (config.password) out.push(config.password);
+      } catch {
+        // No usable config: nothing configured, nothing to scrub.
+      }
+      if (this.token) out.push(this.token);
+    }
+    return out;
+  }
+
+  /**
+   * The typed error for a failed response, with every credential scrubbed out
+   * of Planka's message: an error body that echoes the request must not carry
+   * the caller's key back to the model.
+   */
+  private responseError(status: number, data: unknown, context: string) {
+    if (this.requestScoped && status === 401) {
+      return new PlankaAuthError(
+        `Planka rejected the API key sent with this request (${context}). ` +
+          "Check the Planka API key stored for your account in the gateway."
+      );
+    }
+    const error = createPlankaError(status, data, context);
+    error.message = redactSecrets(error.message, this.secrets());
+    return error;
   }
 
   /** Request timeout in milliseconds */
@@ -241,6 +344,14 @@ export class PlankaClient {
    * `x-api-key` whenever `Authorization` is present.
    */
   private async authOptions(): Promise<Pick<RequestOptions, "token" | "apiKey">> {
+    // HTTP mode: the caller's own key, or nothing at all. Never the env.
+    const ctx = getRequestContext();
+    if (ctx) return { apiKey: ctx.apiKey };
+    if (this.requestScoped) {
+      throw new PlankaAuthError(
+        "No API key for this request: in HTTP mode every request must carry X-Api-Key."
+      );
+    }
     const config = this.getConfig();
     if (config.apiKey) return { apiKey: config.apiKey };
     return { token: await this.getToken() };
@@ -345,7 +456,7 @@ export class PlankaClient {
         this.tokenExpiresAt = 0;
         return this.request(method, path, body, true);
       }
-      throw createPlankaError(response.status, data, `${method} ${path}`);
+      throw this.responseError(response.status, data, `${method} ${path}`);
     }
 
     this.assertNotHtml(response, data, `${method} ${path}`, method);
@@ -398,7 +509,7 @@ export class PlankaClient {
         this.tokenExpiresAt = 0;
         return this.postMultipart(path, form, true);
       }
-      throw createPlankaError(response.status, data, `POST ${path}`);
+      throw this.responseError(response.status, data, `POST ${path}`);
     }
 
     return data as T;
@@ -413,10 +524,8 @@ export class PlankaClient {
     isRetry = false
   ): Promise<{ bytes: Uint8Array; mimeType: string | null }> {
     const config = this.getConfig();
+    const url = this.sameOriginUrl(urlOrPath, config.baseUrl);
     const auth = await this.authOptions();
-    const url = urlOrPath.startsWith("http")
-      ? urlOrPath
-      : `${config.baseUrl}${urlOrPath}`;
 
     let response: Response;
     try {
@@ -450,7 +559,7 @@ export class PlankaClient {
         this.tokenExpiresAt = 0;
         return this.getBinary(urlOrPath, true);
       }
-      throw createPlankaError(response.status, null, `GET ${url}`);
+      throw this.responseError(response.status, null, `GET ${url}`);
     }
 
     const buffer = await response.arrayBuffer();
@@ -458,6 +567,34 @@ export class PlankaClient {
       bytes: new Uint8Array(buffer),
       mimeType: response.headers.get("content-type"),
     };
+  }
+
+  /**
+   * Where a download may go WITH credentials attached: the configured Planka
+   * origin only. The URL comes from board data (an attachment's `data.url`),
+   * and anyone who can edit a card can make that point at their own host —
+   * which would otherwise receive the caller's API key or token. A Planka
+   * attachment URL on another origin (Planka's public BASE_URL while this
+   * server talks to an internal address) is re-rooted on the configured
+   * origin; anything else is refused before a request goes out.
+   */
+  private sameOriginUrl(urlOrPath: string, baseUrl: string): string {
+    if (!/^https?:\/\//i.test(urlOrPath)) {
+      return `${baseUrl}${urlOrPath.startsWith("/") ? "" : "/"}${urlOrPath}`;
+    }
+    const target = new URL(urlOrPath);
+    const base = new URL(baseUrl);
+    if (target.origin === base.origin) return target.href;
+    if (/^\/attachments\/[^/]+\/download\//.test(target.pathname)) {
+      return `${baseUrl}${target.pathname}${target.search}`;
+    }
+    throw new PlankaError(
+      `Refusing to download ${target.origin}${target.pathname}: it is not on the Planka ` +
+        `origin (${base.origin}), and Planka credentials are never sent to another host. ` +
+        "A link attachment points at an external page; open its URL directly instead.",
+      "FOREIGN_ORIGIN",
+      0
+    );
   }
 
   /**

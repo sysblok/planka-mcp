@@ -21,5 +21,12 @@ COPY docs ./docs
 COPY workflow ./workflow
 COPY LICENSE CREDITS.md ./
 USER node
-# stdio transport: run with `docker run -i --rm`.
+# Two transports, one image:
+#   stdio (default):  docker run -i --rm -e PLANKA_BASE_URL -e PLANKA_API_KEY <image>
+#   multi-user HTTP:  docker run --rm -e MCP_TRANSPORT=http -e PLANKA_BASE_URL -p 3000:3000 <image>
+# HTTP mode listens on PORT (default 3000); keep it on a private network.
+EXPOSE 3000
+# Probes /healthz in HTTP mode; always healthy in stdio mode (no port to probe).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["node", "dist/healthcheck.js"]
 ENTRYPOINT ["node", "dist/index.js"]

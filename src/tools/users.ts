@@ -8,6 +8,7 @@ import {
   listUsers,
 } from "../operations/users.js";
 import { getConfig } from "../client.js";
+import { getRequestContext } from "../request-context.js";
 import { getPolicy } from "../config/policy.js";
 import { PlankaError } from "../errors.js";
 
@@ -99,7 +100,9 @@ export const whoamiTool = {
 
       let authMode: "apiKey" | "password" | "unknown" = "unknown";
       try {
-        authMode = getConfig().apiKey ? "apiKey" : "password";
+        // HTTP mode: the caller's own X-Api-Key, never an env credential.
+        authMode =
+          getRequestContext() || getConfig().apiKey ? "apiKey" : "password";
       } catch {
         // A config error would have stopped the call above; stay silent.
       }

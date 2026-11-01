@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0-sysblok.2] - sysblok fork
+
+Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.2`; based on 0.3.0.
+
+### Added
+
+- **Multi-user HTTP mode** (`MCP_TRANSPORT=http` or `--http`): stateless
+  Streamable HTTP on `POST /mcp` (`HOST`/`PORT`, default `0.0.0.0:3000`) for
+  running behind a gateway such as LiteLLM. Each request authenticates with
+  its own `X-Api-Key`, carried in `AsyncLocalStorage`. A request without one
+  gets a 401 before any tool runs. The server refuses to start if
+  `PLANKA_API_KEY` or `PLANKA_AGENT_EMAIL`/`PLANKA_AGENT_PASSWORD` is set.
+  `GET /healthz` answers without touching Planka. The image gains `EXPOSE 3000`
+  and a `HEALTHCHECK`. stdio stays the default and is unchanged.
+
+### Security
+
+- The board-names cache is partitioned by a SHA-256 hash of the caller's key,
+  so two users never share an entry. It is also bounded to 1000 entries.
+- Credentials are scrubbed from Planka error messages, tool results and logged
+  errors.
+- Credentialed attachment downloads only go to the `PLANKA_BASE_URL` origin.
+  Before, a link attachment's URL received the API key or token. A Planka
+  attachment URL on another origin is re-rooted onto `PLANKA_BASE_URL`.
+  Anything else is refused. This applies in stdio mode as well.
+
 ## [0.3.0-sysblok.1] - sysblok fork
 
 Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.1`; based on 0.3.0.
