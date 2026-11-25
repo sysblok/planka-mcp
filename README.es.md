@@ -1,6 +1,6 @@
 # planka-mcp
 
-Manejá un tablero Planka 2.x desde Claude Code mediante 41 tools MCP.
+Manejá un tablero Planka 2.x desde Claude Code mediante 42 tools MCP.
 Las escrituras se releen y verifican: un éxito informado coincide con el board.
 Un flujo opcional convierte ese board en memoria durable para el trabajo con agentes.
 
@@ -275,7 +275,7 @@ Ejemplo — un agente que lee un board y comenta, y nada más:
 }
 ```
 
-## Las 41 tools
+## Las 42 tools
 
 Los IDs son strings. Empezá con `planka_get_structure` y usá los IDs que devuelve
 Planka; no los adivines.
@@ -318,6 +318,7 @@ Planka; no los adivines.
 | `planka_card_history` | El historial de una card en líneas legibles: creada, movida, asignada, tareas completadas |
 | `planka_board_activity` | Qué se movió en un board desde una fecha, agrupado por card |
 | `planka_set_card_members` | Asigna o desasigna personas y verifica la membresía final |
+| `planka_set_custom_field` | Completa o vacía un campo personalizado existente por nombre o id; un campo desconocido se rechaza con los campos reales de la card |
 | `planka_list_users` | Quiénes pueden ser asignados, con fallback al board |
 | `planka_whoami` | La cuenta del servidor, su rol en el board, la versión de Planka y la policy |
 | `planka_duplicate_card` | Copia una card con sus tareas, labels y miembros |
@@ -347,7 +348,7 @@ cómo abrir una sesión, de dónde salen los IDs, por qué importan todos los
 comentarios de una card, y que Planka contesta `404` donde quiere decir `403`.
 Claude Code las mete en el system prompt de la sesión y Codex CLI las lee junto
 con la lista de tools, así que la guía compartida se dice una vez en vez de
-repetirse en 41 descripciones. Cada tool además publica un título de display y
+repetirse en 42 descripciones. Cada tool además publica un título de display y
 los cuatro hints de comportamiento del MCP escritos explícitamente, en lugar de
 heredar los defaults pesimistas de la spec, más las dos claves `_meta` que
 Claude Code sí usa: confirmación forzada en las tools que borran datos y un tope
@@ -426,7 +427,7 @@ npm test
 ```
 
 El smoke real es opt-in porque modifica un board escribible y después limpia lo
-creado. Ejercita las 41 tools por stdio y contrasta cada escritura contra la API
+creado. Ejercita las 42 tools por stdio y contrasta cada escritura contra la API
 cruda de Planka: más de 90 checks con nombre.
 
 ```bash

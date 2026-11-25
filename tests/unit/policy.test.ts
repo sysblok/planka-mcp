@@ -204,7 +204,7 @@ describe("isToolVisible / toolBlockedReason", () => {
         !presentation.annotations.readOnlyHint
       );
     }
-    expect(WRITE_TOOL_NAMES.size).toBe(27);
+    expect(WRITE_TOOL_NAMES.size).toBe(28);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   CardLabelSchema,
   CardMembershipSchema,
   AttachmentSchema,
+  CustomFieldGroupSchema,
   CustomFieldSchema,
   CustomFieldValueSchema,
 } from "./entities.js";
@@ -97,6 +98,7 @@ export const CardIncludedSchema = z
     cardLabels: z.array(CardLabelSchema).optional(),
     cardMemberships: z.array(CardMembershipSchema).optional(),
     attachments: z.array(AttachmentSchema).optional(),
+    customFieldGroups: z.array(CustomFieldGroupSchema).optional(),
     customFields: z.array(CustomFieldSchema).optional(),
     customFieldValues: z.array(CustomFieldValueSchema).optional(),
     users: z.array(UserSchema).optional(),

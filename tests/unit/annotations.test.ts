@@ -154,6 +154,7 @@ describe("tools/list payload", () => {
       "planka_duplicate_card",
       "planka_archive_card",
       "planka_move_list_cards",
+      "planka_set_custom_field",
     ]);
   });
 

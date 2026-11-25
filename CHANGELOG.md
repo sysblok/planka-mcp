@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `planka_set_custom_field` fills or clears a custom field that exists on a
+  card, by field name or id, and verifies it by re-reading the card. A field
+  the card does not have is refused with `custom_field_not_found` and the
+  card's real fields. Before refusing, the board is read again, so a field
+  that was just added is not missed.
+
+### Changed
+
+- `planka_get_card detail:"full"` lists every custom field of the card: board
+  groups, card groups and groups from project templates, empty fields
+  included, as `{group, field, content, scope, groupId, fieldId}`. Values whose
+  field cannot be resolved move to `customFieldsUnresolved`. Before, only
+  filled values were listed, as `{name, content}`, without ids.
+
 ## [0.3.0-sysblok.2] - sysblok fork
 
 Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.2`; based on 0.3.0.

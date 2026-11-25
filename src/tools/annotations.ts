@@ -114,6 +114,11 @@ export const toolPresentation: Record<string, ToolPresentation> = {
     annotations: { ...UPDATE, destructiveHint: true },
   },
   planka_move_card: { title: "Move card", annotations: UPDATE },
+  // content null clears the field, so this can lose data.
+  planka_set_custom_field: {
+    title: "Set card custom field",
+    annotations: { ...UPDATE, destructiveHint: true },
+  },
   planka_delete_card: {
     title: "Delete card",
     annotations: DESTRUCTIVE,

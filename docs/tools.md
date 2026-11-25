@@ -1,6 +1,6 @@
 # Tools reference
 
-The server exposes exactly 41 tools: 34 in active use plus 7 deprecated ones kept
+The server exposes exactly 42 tools: 35 in active use plus 7 deprecated ones kept
 as aliases (see [Deprecated aliases](#deprecated-aliases); `PLANKA_HIDE_DEPRECATED`
 takes them out of `tools/list`). Tool results are MCP text content containing
 JSON (minified — the indentation was pure token cost). On an expected Planka
@@ -74,7 +74,7 @@ configured Planka instance, not the open web.
 | Reads (`get_*`, `list_*`, `find_cards`, `board_summary`) | `true` | `false` | `true` |
 | Additive writes (`create_card`, `create_tasks`, `create_comment`, `create_label`, `create_list`, `add_attachment`) | `false` | `false` | `false` |
 | Converging writes (`move_card`, `update_task`, `update_label`, `update_list`, `update_comment`) | `false` | `false` | `true` |
-| Data-losing writes (`update_card`, `set_card_labels`, `set_card_members`, `archive_card`, `move_list_cards`, every `delete_*`) | `false` | `true` | `true` |
+| Data-losing writes (`update_card`, `set_card_labels`, `set_card_members`, `set_custom_field`, `archive_card`, `move_list_cards`, every `delete_*`) | `false` | `true` | `true` |
 | Deprecated multi-action aliases (`manage_labels`, `manage_lists`, `manage_comment`) | `false` | `true` | `false` |
 
 **Anthropic `_meta`.** Claude Code does not gate permissions on the standard
@@ -384,7 +384,7 @@ and `descriptionTruncated`).
 
 | Parameter | Default | What it does |
 |---|---|---|
-| `detail` | `"digest"` | `"full"` adds the whole description, every task item, the attachment list and the custom field values |
+| `detail` | `"digest"` | `"full"` adds the whole description, every task item, the attachment list and **every** custom field of the card — empty ones too — as `{group, field, content, scope, groupId, fieldId}` |
 | `withComments` | `0` | A number returns the N most recent comments; `"all"` pages through every one of them |
 | `descriptionChars` | `200` | Size of the description preview (max 2000). Ignored when `detail` is `"full"` |
 
@@ -1009,6 +1009,41 @@ The response distinguishes `added`, `removed`, `alreadyPresent`, `notPresent`,
 `failed` and `finalMemberIds`. A `404` on an addition almost always means the
 user is not a member of that board; the reason says so.
 
+### `planka_set_custom_field`
+
+Fills or clears one custom field that **already exists** on a card, then
+re-reads the card and reports what landed. It never creates a field.
+
+```json
+{
+  "cardId": "5234567890123456789",
+  "field": "Google Doc",
+  "content": "https://docs.google.com/document/d/…"
+}
+```
+
+| Parameter | What it does |
+|---|---|
+| `field` | Field name (exact, case-insensitive) or `fieldId` |
+| `group` | Group name or `groupId`, only when the same name exists in several groups |
+| `content` | The new value, at most 512 characters (Planka's limit). `null` or `""` clears the field |
+
+The fields a card has come from three places: the board's groups (shown on
+every card), the card's own groups, and either kind instantiated from a project
+template, whose fields only the project show lists. `planka_get_card
+detail:"full"` lists all of them in `customFields`, empty ones included.
+
+- A field the card does not have comes back as `isError` with
+  `error: "custom_field_not_found"` and `availableFields`, the card's real
+  fields, so the model can correct the name instead of guessing.
+- A name in two groups comes back as `custom_field_ambiguous` with the
+  `candidates`; pass `group` or the `fieldId`.
+- The name is resolved against the one-minute board cache first. Before
+  anything is refused, the board is read again, so a field added in the UI a
+  moment ago is still found.
+- Writing the value the field already has, or clearing an empty field, writes
+  nothing and answers `changed: false`.
+
 ## Card operations
 
 ### `planka_duplicate_card`
@@ -1209,7 +1244,7 @@ Unit tests validate schemas, request construction, and error formatting without 
 network: run them with `npm test`.
 
 The opt-in smoke test is the other half. It starts the built MCP server over stdio,
-drives all 41 tools through real MCP calls, and independently queries the raw
+drives all 42 tools through real MCP calls, and independently queries the raw
 Planka HTTP API after every mutation, so a tool that reports success on something
 that never landed is caught here. It runs over 90 named checks.
 
