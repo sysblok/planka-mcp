@@ -454,14 +454,14 @@ describe("PLANKA_HIDE_DEPRECATED", () => {
     for (const name of DEPRECATED_TOOL_NAMES) {
       expect(names, name).toContain(name);
     }
-    expect(names).toHaveLength(41);
+    expect(names).toHaveLength(42);
   });
 
   it("drops exactly the deprecated tools when set", () => {
     const policy = parsePolicy({ PLANKA_HIDE_DEPRECATED: "true" });
     const names = getToolDefinitions(policy).map((t) => t.name);
 
-    expect(names).toHaveLength(41 - DEPRECATED_TOOL_NAMES.size);
+    expect(names).toHaveLength(42 - DEPRECATED_TOOL_NAMES.size);
     for (const name of DEPRECATED_TOOL_NAMES) {
       expect(names, name).not.toContain(name);
     }

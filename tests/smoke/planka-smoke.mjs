@@ -37,7 +37,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { PlankaApi, boardEntities } from "../../scripts/lib/planka-api.mjs";
 
-const EXPECTED_TOOL_COUNT = 41;
+const EXPECTED_TOOL_COUNT = 42;
 
 /** Prefix on every artifact this test creates; the initial sweep looks for it. */
 const PREFIX = "[smoke planka-mcp]";
@@ -1090,6 +1090,78 @@ async function run() {
       (membership) => membership.userId === who.user.id
     ),
     rawUnassigned?.included?.cardMemberships
+  );
+
+  // --- custom fields: a card-level group, so it goes with the card ---------
+  const cfGroup = (
+    await api.post(`/api/cards/${cardId}/custom-field-groups`, {
+      position: 65536,
+      name: `${PREFIX} group`,
+    })
+  ).item;
+  const cfField = (
+    await api.post(`/api/custom-field-groups/${cfGroup.id}/custom-fields`, {
+      position: 65536,
+      name: "Google Doc",
+    })
+  ).item;
+
+  const cfListed = await json("planka_get_card", { cardId, detail: "full" });
+  check(
+    "planka_get_card full lists the empty custom field with its ids",
+    (cfListed?.customFields ?? []).some(
+      (f) => f.fieldId === cfField.id && f.groupId === cfGroup.id && f.content === null
+    ),
+    cfListed?.customFields
+  );
+
+  const cfValue = "https://docs.google.com/document/d/smoke";
+  const cfSet = await json("planka_set_custom_field", {
+    cardId,
+    field: "google doc",
+    content: cfValue,
+  });
+  check(
+    "planka_set_custom_field fills a field by name and verifies it",
+    cfSet?.verified === true && cfSet?.content === cfValue,
+    cfSet
+  );
+
+  const rawCf = await api.getCard(cardId);
+  check(
+    "the raw API confirms the custom field value",
+    (rawCf?.included?.customFieldValues ?? []).some(
+      (v) => v.customFieldId === cfField.id && v.content === cfValue
+    ),
+    rawCf?.included?.customFieldValues
+  );
+
+  const cfMissing = await callTool("planka_set_custom_field", {
+    cardId,
+    field: `${PREFIX} no such field`,
+    content: "x",
+  });
+  check(
+    "planka_set_custom_field refuses an unknown field and lists the real ones",
+    cfMissing.isError &&
+      cfMissing.text.includes("custom_field_not_found") &&
+      cfMissing.text.includes(cfField.id),
+    cfMissing.text
+  );
+
+  const cfCleared = await json("planka_set_custom_field", {
+    cardId,
+    field: cfField.id,
+    content: null,
+  });
+  const rawCfCleared = await api.getCard(cardId);
+  check(
+    "planka_set_custom_field clears a field, confirmed by the raw API",
+    cfCleared?.verified === true &&
+      !(rawCfCleared?.included?.customFieldValues ?? []).some(
+        (v) => v.customFieldId === cfField.id
+      ),
+    cfCleared
   );
 
   // --- history: the card has been created, moved and assigned by now ---------

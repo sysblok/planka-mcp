@@ -13,6 +13,7 @@ import { activityTools } from "./activity.js";
 import { memberTools } from "./members.js";
 import { userTools } from "./users.js";
 import { cardOpsTools } from "./card-ops.js";
+import { customFieldTools } from "./custom-fields.js";
 import { toolPresentation } from "./annotations.js";
 import { missingRequiredArgs } from "./dispatch.js";
 import {
@@ -38,6 +39,7 @@ export const allTools = [
   ...memberTools,
   ...userTools,
   ...cardOpsTools,
+  ...customFieldTools,
 ];
 
 /**

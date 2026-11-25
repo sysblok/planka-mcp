@@ -25,6 +25,8 @@ import {
   writeResult,
 } from "../operations/verify.js";
 import { PlankaError } from "../errors.js";
+import { getCardCustomFields } from "../operations/custom-fields.js";
+import { presentSlot } from "./custom-fields.js";
 import { assertListWritable, getPolicy } from "../config/policy.js";
 
 /**
@@ -320,23 +322,6 @@ function tasksOf(details: CardLightDetails, withItems: boolean) {
 }
 
 /**
- * Custom field values resolved to their field name (full detail only).
- * Card-level fields come with the card; board-level ones only with the board.
- */
-function customFieldsOf(
-  details: CardLightDetails,
-  boardFieldNames?: Map<string, string | null>
-) {
-  return details.customFieldValues.map((v) => ({
-    name:
-      details.customFields.find((f) => f.id === v.customFieldId)?.name ??
-      boardFieldNames?.get(v.customFieldId) ??
-      null,
-    content: v.content ?? null,
-  }));
-}
-
-/**
  * Tool: planka_get_card
  * A digest by default; the full record only when asked for.
  */
@@ -345,7 +330,7 @@ export const getCardTool = {
   description:
     "One card as a digest: name, column, labels, members, checklist counts, attachment and comment counts, and the first 200 chars of the description. " +
     'Comments are NOT included by default — pass withComments (a number, or "all") to read them. ' +
-    'detail:"full" adds the whole description, every task item, the attachment list and the custom fields.',
+    'detail:"full" adds the whole description, every task item, the attachment list and every custom field (empty ones too, with the ids planka_set_custom_field takes).',
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -472,7 +457,15 @@ export const getCardTool = {
           mimeType: a.data?.mimeType ?? null,
           sizeBytes: a.data?.size ?? null,
         }));
-        body.customFields = customFieldsOf(details, names?.customFields);
+        // Every field the card has, empty ones included, with the ids
+        // planka_set_custom_field takes. Best effort, like the names above.
+        const cf = await getCardCustomFields(details.card.id, {
+          fresh: false,
+          card: details,
+        });
+        body.customFields = cf.slots.map(presentSlot);
+        if (cf.orphans.length > 0) body.customFieldsUnresolved = cf.orphans;
+        if (cf.incomplete) body.customFieldsIncomplete = cf.incomplete;
       }
 
       if (comments) {

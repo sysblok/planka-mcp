@@ -14,9 +14,13 @@ import {
   Attachment,
   CardMembership,
   CustomField,
+  CustomFieldGroup,
   CustomFieldValue,
   User,
+  CustomFieldGroupSchema,
+  CustomFieldSchema,
 } from "../schemas/entities.js";
+import { z } from "zod";
 import {
   CardIdSchema,
   CardIdInput,
@@ -43,6 +47,8 @@ export interface CardLightDetails {
   cardMemberships: CardMembership[];
   /** Users referenced by the memberships and task assignees. */
   users: User[];
+  /** The card's OWN groups. Board-level groups only come with the board show. */
+  customFieldGroups: CustomFieldGroup[];
   customFields: CustomField[];
   customFieldValues: CustomFieldValue[];
 }
@@ -93,6 +99,7 @@ export async function getCardLight(input: CardIdInput): Promise<CardLightDetails
     attachments: included.attachments || [],
     cardMemberships: included.cardMemberships || [],
     users: included.users || [],
+    customFieldGroups: included.customFieldGroups || [],
     customFields: included.customFields || [],
     customFieldValues: included.customFieldValues || [],
   };
@@ -117,6 +124,12 @@ export interface BoardNames {
   lists: Map<string, string | null>;
   labels: Map<string, string | null>;
   customFields: Map<string, string | null>;
+  /** The board's project: base custom field groups live there. */
+  projectId: string | null;
+  /** BOARD-level custom field groups (the card-level ones of other cards are dropped). */
+  customFieldGroups: CustomFieldGroup[];
+  /** Field definitions of those groups, as the board show includes them. */
+  customFieldDefs: CustomField[];
 }
 
 const BOARD_NAMES_TTL_MS = 60_000;
@@ -173,26 +186,52 @@ function nameIndex(rows: unknown): Map<string, string | null> {
   return index;
 }
 
+/** Rows of a raw `included` array that pass `schema`; the others are skipped. */
+export function rowsOf<T>(schema: z.ZodType<T>, rows: unknown): T[] {
+  if (!Array.isArray(rows)) return [];
+  const out: T[] = [];
+  for (const row of rows) {
+    const parsed = schema.safeParse(row);
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}
+
+/**
+ * One uncached board GET, turned into names. Throws on failure — the cached
+ * `getBoardNames` is the forgiving wrapper.
+ */
+export async function fetchBoardNames(boardId: string): Promise<BoardNames> {
+  const response = await plankaClient.get<unknown>(`/api/boards/${boardId}`);
+  const { item, included } = response as {
+    item?: { projectId?: unknown };
+    included?: Record<string, unknown>;
+  };
+  const groups = rowsOf(CustomFieldGroupSchema, included?.customFieldGroups).filter(
+    (g) => g.boardId === boardId
+  );
+  const names: BoardNames = {
+    lists: nameIndex(included?.lists),
+    labels: nameIndex(included?.labels),
+    customFields: nameIndex(included?.customFields),
+    projectId: typeof item?.projectId === "string" ? item.projectId : null,
+    customFieldGroups: groups,
+    customFieldDefs: rowsOf(CustomFieldSchema, included?.customFields),
+  };
+  rememberBoardNames(boardNamesKey(boardId), names);
+  return names;
+}
+
 export async function getBoardNames(
   boardId: string
 ): Promise<BoardNames | null> {
-  const key = boardNamesKey(boardId);
-  const cached = boardNamesCache.get(key);
+  const cached = boardNamesCache.get(boardNamesKey(boardId));
   if (cached && Date.now() - cached.at < BOARD_NAMES_TTL_MS) {
     return cached.names;
   }
 
   try {
-    const response = await plankaClient.get<unknown>(`/api/boards/${boardId}`);
-    const included = (response as { included?: Record<string, unknown> })
-      .included;
-    const names: BoardNames = {
-      lists: nameIndex(included?.lists),
-      labels: nameIndex(included?.labels),
-      customFields: nameIndex(included?.customFields),
-    };
-    rememberBoardNames(key, names);
-    return names;
+    return await fetchBoardNames(boardId);
   } catch {
     return null;
   }

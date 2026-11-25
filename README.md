@@ -1,6 +1,6 @@
 # planka-mcp
 
-Control a Planka 2.x board from Claude Code through 41 MCP tools.
+Control a Planka 2.x board from Claude Code through 42 MCP tools.
 Writes are re-read and verified, so a reported success matches the board.
 An optional workflow turns that board into durable memory for agent work.
 
@@ -398,7 +398,7 @@ Example — an agent that reads one board and comments, and nothing else:
 }
 ```
 
-## The 41 tools
+## The 42 tools
 
 IDs are strings. Start with `planka_get_structure`, then use IDs returned by
 Planka; do not guess them.
@@ -441,6 +441,7 @@ Planka; do not guess them.
 | `planka_card_history` | One card's activity log as human lines: created, moved, assigned, tasks completed |
 | `planka_board_activity` | What moved on a board since a date, grouped by card |
 | `planka_set_card_members` | Assigns or unassigns people and verifies the final membership |
+| `planka_set_custom_field` | Fills or clears an existing custom field by name or id; an unknown field is refused with the card's real fields |
 | `planka_list_users` | The people who can be assigned, with a board-scoped fallback |
 | `planka_whoami` | This server's account, board role, Planka version and access policy |
 | `planka_duplicate_card` | Copies a card with its tasks, labels and members |
@@ -469,7 +470,7 @@ The `initialize` handshake returns a short set of server instructions — how to
 open a session, where IDs come from, why every comment on a card matters, and
 that Planka answers `404` where it means `403`. Claude Code puts them in the
 session system prompt and Codex CLI reads them alongside the tool list, so the
-shared guidance is stated once instead of repeated in 41 tool descriptions.
+shared guidance is stated once instead of repeated in 42 tool descriptions.
 Every tool also publishes a display title and all four MCP behavioural hints
 explicitly, rather than inheriting the spec's pessimistic defaults, plus the two
 `_meta` keys Claude Code acts on: a forced confirmation prompt on the tools that
@@ -548,7 +549,7 @@ npm test
 ```
 
 The real smoke test is opt-in because it mutates a writable board and then cleans
-up after itself. It drives all 41 tools over stdio and cross-checks every write
+up after itself. It drives all 42 tools over stdio and cross-checks every write
 against the raw Planka API — over 90 named checks:
 
 ```bash

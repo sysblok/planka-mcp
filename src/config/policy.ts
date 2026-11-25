@@ -80,6 +80,7 @@ export const WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   "planka_duplicate_card",
   "planka_archive_card",
   "planka_move_list_cards",
+  "planka_set_custom_field",
 ]);
 
 /** Tool names are always prefixed; accept the bare name as a convenience. */

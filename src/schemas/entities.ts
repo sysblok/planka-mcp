@@ -160,6 +160,21 @@ export const CardMembershipSchema = z
   .passthrough();
 export type CardMembership = z.infer<typeof CardMembershipSchema>;
 
+// A custom field group: on a board (shown on every card), on one card, or
+// either of those instantiated from a project's base group — in which case
+// its fields belong to the BASE group and only the project show lists them.
+export const CustomFieldGroupSchema = z
+  .object({
+    id: z.string(),
+    boardId: z.string().nullable().optional(),
+    cardId: z.string().nullable().optional(),
+    baseCustomFieldGroupId: z.string().nullable().optional(),
+    name: z.string().nullable().optional(),
+    position: z.number().nullable().optional(),
+  })
+  .passthrough();
+export type CustomFieldGroup = z.infer<typeof CustomFieldGroupSchema>;
+
 // Custom field definition and its value on a card.
 // Enums are read as plain strings: closing them would make a future Planka
 // field type crash a read path.

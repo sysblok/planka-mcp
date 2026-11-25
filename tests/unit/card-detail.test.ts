@@ -59,9 +59,13 @@ const included = {
   attachments: [
     { id: "att-1", cardId: "card-1", name: "shot.png", type: "file", data: { size: 1024, mimeType: "image/png" }, ...ts },
   ],
-  customFields: [{ id: "cf-1", name: "Environment" }],
+  customFieldGroups: [{ id: "cfg-card", cardId: "card-1", name: "Deploy", position: 1 }],
+  customFields: [
+    { id: "cf-1", customFieldGroupId: "cfg-card", name: "Environment", position: 1 },
+    { id: "cf-2", customFieldGroupId: "cfg-card", name: "Owner", position: 2 },
+  ],
   customFieldValues: [
-    { id: "cfv-1", cardId: "card-1", customFieldId: "cf-1", content: "prod" },
+    { id: "cfv-1", cardId: "card-1", customFieldGroupId: "cfg-card", customFieldId: "cf-1", content: "prod" },
   ],
 };
 
@@ -201,8 +205,10 @@ describe("get_card full detail", () => {
         sizeBytes: 1024,
       },
     ]);
+    // Empty fields too, with the ids planka_set_custom_field takes.
     expect(body.customFields).toEqual([
-      { name: "Environment", content: "prod" },
+      { group: "Deploy", field: "Environment", content: "prod", scope: "card", groupId: "cfg-card", fieldId: "cf-1" },
+      { group: "Deploy", field: "Owner", content: null, scope: "card", groupId: "cfg-card", fieldId: "cf-2" },
     ]);
     expect(body.more).toBeUndefined();
   });
@@ -216,6 +222,7 @@ describe("get_card board-level custom fields", () => {
           item: card,
           included: {
             ...included,
+            customFieldGroups: [],
             customFields: [],
             customFieldValues: [
               { id: "cfv-2", cardId: "card-1", customFieldGroupId: "cfg-board", customFieldId: "cf-board", content: "https://docs.google.com/document/d/x" },
@@ -229,7 +236,16 @@ describe("get_card board-level custom fields", () => {
           ...boardBody,
           included: {
             ...boardBody.included,
-            customFields: [{ id: "cf-board", customFieldGroupId: "cfg-board", name: "Google Doc", position: 1, ...ts }],
+            customFieldGroups: [
+              { id: "cfg-board", boardId: "board-1", name: "Публикация", position: 1 },
+              // Another card's own group: not this card's business.
+              { id: "cfg-other", cardId: "card-2", name: "Other", position: 1 },
+            ],
+            customFields: [
+              { id: "cf-board", customFieldGroupId: "cfg-board", name: "Google Doc", position: 1, ...ts },
+              { id: "cf-editor", customFieldGroupId: "cfg-board", name: "Редактор", position: 2, ...ts },
+              { id: "cf-other", customFieldGroupId: "cfg-other", name: "Other field", position: 1, ...ts },
+            ],
           },
         };
       }
@@ -241,8 +257,11 @@ describe("get_card board-level custom fields", () => {
     );
 
     expect(body.customFields).toEqual([
-      { name: "Google Doc", content: "https://docs.google.com/document/d/x" },
-      { name: null, content: "orphan" },
+      { group: "Публикация", field: "Google Doc", content: "https://docs.google.com/document/d/x", scope: "board", groupId: "cfg-board", fieldId: "cf-board" },
+      { group: "Публикация", field: "Редактор", content: null, scope: "board", groupId: "cfg-board", fieldId: "cf-editor" },
+    ]);
+    expect(body.customFieldsUnresolved).toEqual([
+      { groupId: "cfg-board", fieldId: "cf-gone", content: "orphan" },
     ]);
   });
 });
