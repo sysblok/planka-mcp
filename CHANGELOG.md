@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0-sysblok.3] - sysblok fork
+
+Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.3`; based on 0.3.0.
+
 ### Added
 
 - `planka_set_custom_field` fills or clears a custom field that exists on a
