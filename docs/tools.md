@@ -1044,6 +1044,21 @@ detail:"full"` lists all of them in `customFields`, empty ones included.
 - Writing the value the field already has, or clearing an empty field, writes
   nothing and answers `changed: false`.
 
+The reply follows the other write tools: `field` has the same shape as a
+`planka_get_card` entry and holds the value **read back after the write**. The
+old value is in `previousContent`, the way `planka_archive_card` reports
+`previousListId`.
+
+```json
+{
+  "success": true,
+  "verified": true,
+  "changed": true,
+  "field": { "group": "Custom fields", "field": "Google Doc", "content": "https://docs.google.com/document/d/…", "scope": "board", "groupId": "…", "fieldId": "…" },
+  "previousContent": null
+}
+```
+
 ## Card operations
 
 ### `planka_duplicate_card`

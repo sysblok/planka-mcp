@@ -151,10 +151,12 @@ describe("planka_set_custom_field writes a field that exists", () => {
       success: true,
       verified: true,
       changed: true,
-      previous: null,
-      content: DOC,
-      field: { group: "Публикация", field: "Google Doc", scope: "board", groupId: "cfg-pub", fieldId: "cf-doc" },
+      previousContent: null,
+      // The field as get_card shows it, holding the value read back.
+      field: { group: "Публикация", field: "Google Doc", content: DOC, scope: "board", groupId: "cfg-pub", fieldId: "cf-doc" },
     });
+    expect(body).not.toHaveProperty("content");
+    expect(body).not.toHaveProperty("previous");
     expect(mocks.patch).toHaveBeenCalledWith(
       "/api/cards/card-1/custom-field-values/customFieldGroupId:cfg-pub:customFieldId:cf-doc",
       { content: DOC }
@@ -288,7 +290,7 @@ describe("planka_set_custom_field clears and stays honest", () => {
     const body = payload(
       await setCustomFieldTool.handler({ cardId: "card-1", field: "Google Doc", content: null })
     );
-    expect(body).toMatchObject({ success: true, verified: true, changed: true, previous: DOC, content: null });
+    expect(body).toMatchObject({ success: true, verified: true, changed: true, previousContent: DOC, field: { content: null } });
     expect(mocks.delete).toHaveBeenCalledWith(
       "/api/cards/card-1/custom-field-values/customFieldGroupId:cfg-pub:customFieldId:cf-doc"
     );
@@ -314,7 +316,26 @@ describe("planka_set_custom_field clears and stays honest", () => {
     const result = await setCustomFieldTool.handler({ cardId: "card-1", field: "Google Doc", content: DOC });
     const body = payload(result);
     expect(result.isError).toBe(true);
-    expect(body).toMatchObject({ success: false, verified: false, changed: false, content: null });
+    // The re-read wins over Planka's 200 echo: the field is still empty.
+    expect(body).toMatchObject({ success: false, verified: false, changed: false, field: { content: null } });
+  });
+
+  it("falls back to Planka's echo, never a placeholder, when the re-read fails", async () => {
+    await setCustomFieldTool.handler({ cardId: "card-1", field: "Редактор", content: "Аня" });
+    const get = mocks.get.getMockImplementation()!;
+    let cardReads = 0;
+    mocks.get.mockImplementation(async (path: string) => {
+      // The resolving read passes, the verification re-read blows up.
+      if (path === "/api/cards/card-1" && ++cardReads > 1) throw new Error("socket hang up");
+      return get(path);
+    });
+
+    const result = await setCustomFieldTool.handler({ cardId: "card-1", field: "Google Doc", content: DOC });
+    const body = payload(result);
+    expect(result.isError).toBe(true);
+    expect(body.verified).toBe(false);
+    expect(body.verificationError).toMatch(/could not be re-read/);
+    expect(body.field.content).toBe(DOC);
   });
 
   it("refuses content over Planka's 512 characters before any request", async () => {

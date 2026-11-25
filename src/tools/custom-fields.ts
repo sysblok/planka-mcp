@@ -150,11 +150,17 @@ export const setCustomFieldTool = {
 
       const slot = res.slot;
       const key = slotKey(slot.groupId, slot.fieldId);
-      const base = { cardId: params.cardId, field: presentSlot(slot), previous: slot.content };
+      // Same convention as update_card and archive_card: the entity carries
+      // the state AFTER the write (re-read), the old value sits beside it.
+      const reply = (now: string | null) => ({
+        cardId: params.cardId,
+        field: { ...presentSlot(slot), content: now },
+        previousContent: slot.content,
+      });
 
       if (slot.content === content) {
         return writeResult(
-          { ...base, content, changed: false, message: "already set to that value" },
+          { ...reply(slot.content), changed: false, message: "already set to that value" },
           { verified: true }
         );
       }
@@ -172,8 +178,9 @@ export const setCustomFieldTool = {
           del: () => deleteCustomFieldValue(params.cardId, slot.groupId, slot.fieldId),
           confirmGone: async () => (await filledNow()) === null,
         });
+        // Not confirmed gone: claim nothing beyond what was there before.
         return writeResult(
-          { ...base, content: deleted.verified ? null : "unknown", changed: deleted.verified },
+          { ...reply(deleted.verified ? null : slot.content), changed: deleted.verified },
           deleted
         );
       }
@@ -183,14 +190,15 @@ export const setCustomFieldTool = {
         reread: () => filledNow(),
         landed: (after) => after === content,
       });
-      return writeResult(
-        {
-          ...base,
-          content: written.after !== undefined ? written.after : "unknown",
-          changed: written.verified,
-        },
-        written
-      );
+      // The re-read when there is one (even an empty one); else Planka's echo.
+      const echoed = (written.result as { item?: { content?: unknown } } | null)?.item?.content;
+      const now =
+        written.after !== undefined
+          ? written.after
+          : typeof echoed === "string"
+            ? echoed
+            : slot.content;
+      return writeResult({ ...reply(now), changed: written.verified }, written);
     }),
 };
 

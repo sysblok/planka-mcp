@@ -1123,7 +1123,7 @@ async function run() {
   });
   check(
     "planka_set_custom_field fills a field by name and verifies it",
-    cfSet?.verified === true && cfSet?.content === cfValue,
+    cfSet?.verified === true && cfSet?.field?.content === cfValue,
     cfSet
   );
 

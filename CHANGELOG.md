@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.3.0-sysblok.4] - sysblok fork
+
+Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.4`; based on 0.3.0.
+
+### Changed
+
+- `planka_set_custom_field` replies like the other write tools. `field.content`
+  is now the value read back after the write; before, it was the value from
+  before. The old value moves from `previous` to `previousContent`, and the
+  separate top-level `content` is gone. When the re-read fails, the value
+  falls back to Planka's echo of the write instead of the string `"unknown"`.
+
 ## [0.3.0-sysblok.3] - sysblok fork
 
 Distributed as `ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.3`; based on 0.3.0.

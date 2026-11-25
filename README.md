@@ -20,7 +20,7 @@ An optional workflow turns that board into durable memory for agent work.
 >       "args": ["run", "-i", "--rm",
 >                "-e", "PLANKA_BASE_URL", "-e", "PLANKA_API_KEY",
 >                "-e", "PLANKA_DEFAULT_BOARD_ID",
->                "ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.3"],
+>                "ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.4"],
 >       "env": {
 >         "PLANKA_BASE_URL": "https://board.example.com",
 >         "PLANKA_API_KEY": "<prefix>_<secret>",
@@ -295,11 +295,11 @@ docker network create mcp-private
 docker run -d --name planka-mcp --network mcp-private \
   -e MCP_TRANSPORT=http \
   -e PLANKA_BASE_URL=https://board.example.com \
-  ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.3
+  ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.4
 ```
 
 To try it locally, publish the port on loopback only:
-`docker run --rm -e MCP_TRANSPORT=http -e PLANKA_BASE_URL=... -p 127.0.0.1:3000:3000 ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.3`.
+`docker run --rm -e MCP_TRANSPORT=http -e PLANKA_BASE_URL=... -p 127.0.0.1:3000:3000 ghcr.io/sysblok/planka-mcp:v0.3.0-sysblok.4`.
 The image's `HEALTHCHECK` probes `/healthz` in HTTP mode. In stdio mode it
 always reports healthy. stdio via `docker run -i` works exactly as before.
 
